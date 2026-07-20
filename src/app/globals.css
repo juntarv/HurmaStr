@@ -1,0 +1,115 @@
+@import "tailwindcss";
+
+/**
+ * Дизайн-мова HurmaStr — у стилістиці Sator: тепла оранж-амбер палітра,
+ * м'які картки, підтримка світлої та темної теми.
+ *
+ * Кольори задані як CSS-змінні через @theme (світлі значення за замовчуванням).
+ * Темна тема просто перевизначає ті самі змінні в блоці .dark — усі утиліти
+ * (bg-surface, text-ink, …) підхоплюють нові значення автоматично.
+ */
+@theme {
+  --color-canvas: #f6f5f3;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f4f2ef;
+
+  --color-line: #e8e4de;
+  --color-line-strong: #d6d0c7;
+
+  --color-ink: #1c1a17;
+  --color-ink-soft: #4b4741;
+  --color-ink-muted: #7a746b;
+  --color-ink-faint: #a8a199;
+
+  --color-brand: #e38324;
+  --color-brand-hover: #c96f16;
+  --color-brand-soft: #fdf1e3;
+  --color-brand-line: #f6d3a8;
+
+  --color-success: #16a34a;
+  --color-success-soft: #f0fdf4;
+  --color-success-line: #bbf7d0;
+
+  --color-warning: #d97706;
+  --color-warning-soft: #fffbeb;
+  --color-warning-line: #fde68a;
+
+  --color-danger: #dc2626;
+  --color-danger-soft: #fef2f2;
+  --color-danger-line: #fecaca;
+
+  /* Градієнт логотипа/акцентів */
+  --color-accent-from: #ffe563;
+  --color-accent-to: #e38324;
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, sans-serif;
+
+  --radius-card: 0.85rem;
+}
+
+.dark {
+  --color-canvas: #101319;
+  --color-surface: #191d25;
+  --color-surface-muted: #212633;
+
+  --color-line: #2b313d;
+  --color-line-strong: #3b4250;
+
+  --color-ink: #ecedef;
+  --color-ink-soft: #c7cbd2;
+  --color-ink-muted: #9298a4;
+  --color-ink-faint: #6b7280;
+
+  --color-brand: #f2933a;
+  --color-brand-hover: #f7a856;
+  --color-brand-soft: rgba(227, 131, 36, 0.16);
+  --color-brand-line: rgba(227, 131, 36, 0.38);
+
+  --color-success: #34d399;
+  --color-success-soft: rgba(16, 185, 129, 0.14);
+  --color-success-line: rgba(16, 185, 129, 0.34);
+
+  --color-warning: #fbbf24;
+  --color-warning-soft: rgba(217, 119, 6, 0.16);
+  --color-warning-line: rgba(217, 119, 6, 0.38);
+
+  --color-danger: #f87171;
+  --color-danger-soft: rgba(220, 38, 38, 0.16);
+  --color-danger-line: rgba(220, 38, 38, 0.38);
+}
+
+:root {
+  color-scheme: light;
+}
+.dark {
+  color-scheme: dark;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background-color: var(--color-canvas);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Помітний фокус для клавіатурної навігації — доступність без винятків. */
+:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+
+input[type="date"] {
+  min-width: 0;
+}
+
+/* М'яка тінь карток, що не б'є по очах у темній темі. */
+.shadow-card {
+  box-shadow: 0 1px 2px rgba(20, 17, 12, 0.05), 0 1px 3px rgba(20, 17, 12, 0.04);
+}
+.dark .shadow-card {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}

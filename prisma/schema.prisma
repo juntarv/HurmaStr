@@ -1,0 +1,437 @@
+// ============================================================================
+//  HurmaStr — HR-система обліку співробітників
+//  Prisma 7.8 + SQLite (dev) → PostgreSQL (prod)
+// ============================================================================
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// ============================== ENUMS =======================================
+
+enum Role {
+  ADMIN
+  HR
+  MANAGER
+  EMPLOYEE
+}
+
+/// Стан співробітника у штаті. «У відпустці» НЕ зберігається тут —
+/// це обчислюваний стан із погоджених заявок (одне джерело істини).
+enum EmployeeStatus {
+  PROBATION
+  ACTIVE
+  TERMINATED
+}
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  FOP
+  INTERN
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  UNSPECIFIED
+}
+
+/// Спосіб виплати винагороди.
+enum PaymentType {
+  CRYPTO
+  CASH
+  FOP
+}
+
+/// Робочі дні (без субот і неділь) або календарні.
+enum LeaveUnit {
+  CALENDAR_DAYS
+  WORKING_DAYS
+}
+
+enum PayKind {
+  PAID
+  UNPAID
+  STATE_FUNDED
+}
+
+/// Як поповнюється баланс типу.
+enum AccrualMode {
+  /// Щомісяця капає фіксована кількість днів наростаючим підсумком від дати
+  /// найму (відпустка — 2 дн./міс). Баланс не скидається щороку.
+  MONTHLY
+  /// Разова річна норма, що скидається щороку (лікарняні: 2 без довідки, 5 з довідкою).
+  ANNUAL
+  /// Баланс не ведеться (Day Off — лише облік факту).
+  NONE
+}
+
+enum ApprovalRoute {
+  MANAGER_THEN_HR
+  MANAGER_ONLY
+  HR_ONLY
+}
+
+enum LeaveStatus {
+  DRAFT
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum ApprovalStepStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SKIPPED
+}
+
+enum ApproverRole {
+  MANAGER
+  HR
+}
+
+enum AssetCategory {
+  LAPTOP
+  MONITOR
+  PHONE
+  TABLET
+  PERIPHERAL
+  FURNITURE
+  ACCESS_CARD
+  OTHER
+}
+
+enum AssetStatus {
+  IN_USE
+  IN_STOCK
+  REPAIR
+  WRITTEN_OFF
+}
+
+// ============================== АВТОРИЗАЦІЯ =================================
+
+model User {
+  id String @id @default(cuid())
+  /// Робоча пошта — вона ж логін. На неї надсилається запрошення.
+  email String @unique
+  /// Порожній, доки співробітник не активував запрошення.
+  passwordHash String  @default("")
+  role         Role    @default(EMPLOYEE)
+  isActive     Boolean @default(true)
+  /// Інкрементується при звільненні / зміні ролі — миттєво інвалідовує всі видані JWT.
+  tokenVersion Int     @default(0)
+
+  /// Запрошення: одноразовий токен для встановлення пароля.
+  inviteToken      String?   @unique
+  inviteSentAt     DateTime?
+  inviteExpiresAt  DateTime?
+  inviteAcceptedAt DateTime?
+
+  lastLoginAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  employeeId String?   @unique
+  employee   Employee? @relation("EmployeeAccount", fields: [employeeId], references: [id], onDelete: SetNull)
+
+  @@index([role])
+  @@index([isActive])
+}
+
+// ============================== ОРГСТРУКТУРА ================================
+
+model Department {
+  id          String  @id @default(cuid())
+  name        String  @unique
+  description String?
+  /// Ключ іконки/кольору відділу для UI.
+  icon        String  @default("building")
+  colorHex    String  @default("#E38324")
+  isArchived  Boolean @default(false)
+  sortOrder   Int     @default(0)
+
+  parentId String?
+  parent   Department?  @relation("DepartmentTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children Department[] @relation("DepartmentTree")
+
+  headId String?
+  head   Employee? @relation("DepartmentHead", fields: [headId], references: [id], onDelete: SetNull)
+
+  employees Employee[] @relation("EmployeeDepartment")
+  positions Position[] @relation("PositionDepartment")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([parentId])
+  @@index([headId])
+  @@index([isArchived])
+}
+
+model Position {
+  id         String  @id @default(cuid())
+  title      String
+  isArchived Boolean @default(false)
+  sortOrder  Int     @default(0)
+
+  departmentId String?
+  department   Department? @relation("PositionDepartment", fields: [departmentId], references: [id], onDelete: SetNull)
+
+  employees Employee[] @relation("EmployeePosition")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([departmentId])
+  @@index([isArchived])
+}
+
+model Employee {
+  id String @id @default(cuid())
+
+  lastName   String
+  firstName  String
+  middleName String?
+  /// SQLite не має mode:'insensitive' і не знижує регістр кирилиці в LIKE.
+  /// Тому тримаємо денормалізований пошуковий ключ у нижньому регістрі.
+  searchKey String @default("")
+
+  avatarUrl String?
+  gender    Gender  @default(UNSPECIFIED)
+
+  /// Опційний: логін живе в User.email. На неї надсилається запрошення.
+  workEmail     String? @unique
+  personalEmail String?
+  phone         String?
+  telegram      String?
+  city          String?
+
+  emergencyContactName  String?
+  emergencyContactPhone String?
+
+  // Виплати (чутливі дані — доступні HR/адміну та самому співробітнику).
+  paymentType    PaymentType?
+  payoutAmount   Float?
+  payoutCurrency String? // USDT, USD, UAH, EUR…
+  walletAddress  String? // крипто-гаманець або реквізити
+
+  birthDate DateTime?
+
+  /// Дата найму — від неї нараховуються дні відпустки та рахуються річниці.
+  hireDate          DateTime
+  probationEndDate  DateTime?
+  terminationDate   DateTime?
+  terminationReason String?
+
+  status         EmployeeStatus @default(PROBATION)
+  employmentType EmploymentType @default(FULL_TIME)
+
+  isArchived Boolean   @default(false)
+  archivedAt DateTime?
+
+  positionId String?
+  position   Position? @relation("EmployeePosition", fields: [positionId], references: [id], onDelete: SetNull)
+
+  departmentId String?
+  department   Department? @relation("EmployeeDepartment", fields: [departmentId], references: [id], onDelete: SetNull)
+
+  managerId    String?
+  manager      Employee?  @relation("EmployeeHierarchy", fields: [managerId], references: [id], onDelete: SetNull)
+  subordinates Employee[] @relation("EmployeeHierarchy")
+
+  account           User?        @relation("EmployeeAccount")
+  headedDepartments Department[] @relation("DepartmentHead")
+
+  leaveRequests     LeaveRequest[]    @relation("LeaveOwner")
+  expectedApprovals LeaveApproval[]   @relation("ApprovalExpected")
+  madeApprovals     LeaveApproval[]   @relation("ApprovalDecider")
+  adjustments       LeaveAdjustment[] @relation("AdjustmentEmployee")
+
+  assets Asset[] @relation("AssetHolder")
+
+  note      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([departmentId])
+  @@index([positionId])
+  @@index([managerId])
+  @@index([status])
+  @@index([searchKey])
+  @@index([lastName, firstName])
+  @@index([isArchived])
+  @@index([birthDate])
+}
+
+// ============================== ВІДСУТНОСТІ =================================
+
+model LeaveType {
+  id          String  @id @default(cuid())
+  code        String  @unique
+  nameUk      String
+  description String?
+
+  unit           LeaveUnit @default(WORKING_DAYS)
+  payKind        PayKind   @default(PAID)
+  /// Чи списує дні з балансу. Day Off — ні, решта — так.
+  affectsBalance Boolean   @default(true)
+
+  accrualMode AccrualMode @default(NONE)
+  /// Для MONTHLY: скільки днів нараховується щомісяця (відпустка — 2).
+  accrualPerMonth Float?
+  /// Для ANNUAL: річна норма (лікарняний без довідки — 2, з довідкою — 5).
+  annualEntitlement Float?
+
+  minNoticeDays        Int     @default(0)
+  allowPastDates       Boolean @default(false)
+  allowNegativeBalance Boolean @default(false)
+  requiresDocument     Boolean @default(false)
+  /// Чи є тип медичним — приховуємо його від сторонніх у календарі.
+  isMedical            Boolean @default(false)
+
+  approvalRoute ApprovalRoute @default(MANAGER_THEN_HR)
+
+  /// Ключ іконки для UI: palm | heart | bandage | home | plane | book.
+  icon           String  @default("calendar")
+  colorHex       String  @default("#64748B")
+  legalReference String?
+  isActive       Boolean @default(true)
+  sortOrder      Int     @default(100)
+
+  requests    LeaveRequest[]    @relation("RequestType")
+  adjustments LeaveAdjustment[] @relation("AdjustmentType")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive, sortOrder])
+}
+
+/// Ручне коригування балансу днів (± днів) — напр. перенесення залишку
+/// з іншого сервісу при міграції або виправлення HR. Додається до нарахованого.
+model LeaveAdjustment {
+  id String @id @default(cuid())
+
+  employeeId String
+  employee   Employee @relation("AdjustmentEmployee", fields: [employeeId], references: [id], onDelete: Cascade)
+
+  leaveTypeId String
+  leaveType   LeaveType @relation("AdjustmentType", fields: [leaveTypeId], references: [id], onDelete: Restrict)
+
+  /// Для ANNUAL-типів — рік коригування; для MONTHLY — null (застосовується завжди).
+  year Int?
+  days Float
+
+  reason      String
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  @@index([employeeId, leaveTypeId])
+}
+
+model LeaveRequest {
+  id     String @id @default(cuid())
+  /// Людський номер: ЗВ-2026-000042
+  number String @unique
+
+  employeeId String
+  employee   Employee @relation("LeaveOwner", fields: [employeeId], references: [id], onDelete: Cascade)
+
+  leaveTypeId String
+  leaveType   LeaveType @relation("RequestType", fields: [leaveTypeId], references: [id], onDelete: Restrict)
+
+  startDate DateTime
+  endDate   DateTime
+
+  /// Фіксується на момент подання.
+  daysCount    Float
+  unitSnapshot LeaveUnit @default(WORKING_DAYS)
+
+  status      LeaveStatus @default(DRAFT)
+  currentStep Int         @default(0)
+
+  comment        String?
+  documentNumber String?
+
+  // Фото/скан довідки: ім'я файлу на диску + оригінальна назва та MIME.
+  attachmentPath String?
+  attachmentName String?
+  attachmentMime String?
+
+  submittedAt  DateTime?
+  decidedAt    DateTime?
+  cancelledAt  DateTime?
+  cancelReason String?
+
+  approvals LeaveApproval[] @relation("RequestApprovals")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([employeeId, status])
+  @@index([status, startDate])
+  @@index([startDate, endDate])
+  @@index([leaveTypeId])
+}
+
+model LeaveApproval {
+  id String @id @default(cuid())
+
+  requestId String
+  request   LeaveRequest @relation("RequestApprovals", fields: [requestId], references: [id], onDelete: Cascade)
+
+  step   Int
+  role   ApproverRole
+  status ApprovalStepStatus @default(PENDING)
+
+  approverId String?
+  approver   Employee? @relation("ApprovalExpected", fields: [approverId], references: [id], onDelete: SetNull)
+
+  decidedById String?
+  decidedBy   Employee? @relation("ApprovalDecider", fields: [decidedById], references: [id], onDelete: SetNull)
+
+  comment   String?
+  decidedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@unique([requestId, step])
+  @@index([approverId, status])
+  @@index([status])
+}
+
+// ================================ МАЙНО =====================================
+
+model Asset {
+  id       String  @id @default(cuid())
+  name     String
+  category AssetCategory @default(OTHER)
+
+  /// Інвентарний номер — людський ідентифікатор одиниці майна.
+  inventoryNumber String? @unique
+  serialNumber    String?
+
+  status AssetStatus @default(IN_STOCK)
+
+  assignedToId String?
+  assignedTo   Employee? @relation("AssetHolder", fields: [assignedToId], references: [id], onDelete: SetNull)
+  assignedAt   DateTime?
+
+  purchaseDate DateTime?
+  note         String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([category])
+  @@index([assignedToId])
+}

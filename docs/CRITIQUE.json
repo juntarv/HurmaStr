@@ -1,0 +1,344 @@
+[
+  {
+    "severity": "high",
+    "area": "timeoff/approval",
+    "issue": "ApprovalRoute.AUTO дає порожній масив кроків (resolveRoute → []), але submitLeaveRequest безумовно ставить status=PENDING і pendingDays += d. Заявка з AUTO-маршрутом (а також випадок з правила 4 «в системі один HR → маршрут стає AUTO») назавжди зависає в PENDING: рядків LeaveApproval немає, черга /leaves/approvals будується з LeaveApproval, тож погодити її нікому і нічим. Дні вічно заморожені в pendingDays.",
+    "fix": "У submitLeaveRequest після buildRoute: якщо steps.length === 0 → у тій самій транзакції одразу status=APPROVED, decidedAt=now, pendingDays не чіпати (або +d/-d), створити LeaveLedgerEntry USAGE −d по кожному року з calcDaysByYear, записати LeaveEvent('AUTO_APPROVED'). Додати явний тест «AUTO → APPROVED без жодного LeaveApproval» у чек-лист §10.1."
+  },
+  {
+    "severity": "high",
+    "area": "data-model/balances",
+    "issue": "defaultEntitlement живе тільки на LeaveType, а runAccrual перебирає декартів добуток (усі співробітники × усі типи з affectsBalance && defaultEntitlement != null). У списку §9.4 такими є ANNUAL_BASIC(28), ANNUAL_ADDITIONAL_IRREGULAR(7), SOCIAL_CHILDREN(10), SICK_SELF(5), UNPAID_AGREEMENT(15), DAY_OFF(0) → КОЖЕН співробітник отримає 7 днів за ненормований день і 10 днів «за дітей» незалежно від того, чи має на них право. Це пряма неправильність обліку (65 днів замість 28) і юридично хибно: ст. 8 і ст. 19 ЗУ «Про відпустки» дають ці дні лише окремим категоріям.",
+    "fix": "Додати модель EmployeeEntitlement { employeeId, leaveTypeId, validFrom, validTo?, days Float, note } з @@unique([employeeId, leaveTypeId, validFrom]). runAccrual нараховує тільки за наявним EmployeeEntitlement; LeaveType.defaultEntitlement лишається дефолтом, який HR застосовує при створенні картки/призначенні. Для типів без запису — нарахування пропускається (skipped++)."
+  },
+  {
+    "severity": "high",
+    "area": "timeoff/balances",
+    "issue": "daysCount і unitSnapshot фіксуються на момент подання, але всі зворотні операції (cancelLeaveRequest для APPROVED, E4 «дні від завтра до endDate», shortenApprovedLeave, E3 «Перерахувати») перераховують дні заново поточними Holiday + LeaveSettings.workingWeekdays + LeaveType.excludeHolidays. Після зміни виробничого календаря, прапорця martialLawHolidaysSuspended або налаштувань типу повернена кількість ≠ списаній → баланс дрейфує назавжди, при тому що LeaveBalance оголошено кешем ledger, і recompute цей дрейф закріпить, а не виправить.",
+    "fix": "Персистувати знімок розрахунку разом із заявкою: додати LeaveRequest.cellsSnapshot Json (масив {date,label,counted}) або мінімум snapshotExcludeHolidays/snapshotHolidaysSuspended/snapshotWorkingWeekdays. Усі reversal-обчислення робити ВИКЛЮЧНО як арифметику над цим знімком (returned = SUM(counted для дат > today)), ніколи не викликаючи calcDays з поточними довідниками. Аналогічно USAGE_REVERSAL має бути обмежений сумою фактичних USAGE-записів по цьому requestId."
+  },
+  {
+    "severity": "high",
+    "area": "data-model/balances",
+    "issue": "available() включає pendingDays, але recomputeBalance() перебудовує з журналу лише entitled/carried/adjustment/used і навмисно не чіпає pendingDays («це заморозка, не рух днів»). Тобто для pendingDays немає джерела істини взагалі: будь-який збій транзакції, ручна правка, або скасування поза happy-path назавжди залишає «фантомні» заморожені дні, і recomputeAllBalances(year) їх не вилікує. Пункт чек-листа «recomputeAllBalances не змінює жодного балансу» при цьому неперевіряємий.",
+    "fix": "Зробити pendingDays теж похідним: у recomputeBalance рахувати pending = SUM(днів по році з calcDaysByYear-знімка) по всіх LeaveRequest цього співробітника і типу зі status='PENDING', і писати його в upsert. bumpPending лишити як швидкий інкремент у транзакції, але recompute має бути авторитетним реконсиліатором."
+  },
+  {
+    "severity": "high",
+    "area": "data-model/integrity",
+    "issue": "Ідемпотентність runAccrual/runCarryOver/compensateOnTermination тримається лише на read-then-write перевірці в коді — у LeaveLedgerEntry немає жодного unique. Плюс ключ включає month Int?, а SQLite (і Postgres) вважають NULL-и різними, тож навіть доданий @@unique([employeeId,leaveTypeId,year,kind,month]) не захистить режим FULL_YEAR_UPFRONT (month=null) і CARRY_OVER. Подвійний клік по «Нарахувати» або паралельний запуск подвоїть entitledDays.",
+    "fix": "Додати LeaveLedgerEntry.dedupeKey String? @unique, що формується детерміновано: `${employeeId}:${leaveTypeId}:${year}:${kind}:${month ?? 'Y'}` для ACCRUAL/CARRY_OVER/COMPENSATION (для USAGE/ADJUSTMENT — null). Створення робити через create з ловом P2002 → skipped++, а не через попередній findFirst."
+  },
+  {
+    "severity": "high",
+    "area": "permissions",
+    "issue": "User.employeeId — опційний (@unique String?), і §9.7 явно тестує сценарій «Employee без User». Але зворотний випадок (User без Employee) не заборонений і ламає майже все: session.employeeId = null → getSubtreeIds(null) для MANAGER, «Мій баланс» на /, /leaves/my, кнопка «Подати заявку» (LeaveRequest.employeeId — NOT NULL), блок самопогодження (порівняння з decidedById), /profile. ADMIN-акаунт без картки — цілком реальний кейс (технічний адмін).",
+    "fix": "Зафіксувати правило в permissions.ts і в типі сесії: Session = { userId, role, employeeId: string | null }. Для всіх self-service роутів і дій, що вимагають employeeId, — явний guard «Обліковий запис не пов'язаний зі співробітником» замість падіння; MANAGER без employeeId → порожня команда, а не помилка. У /settings/users заборонити призначати роль MANAGER/EMPLOYEE акаунту без employeeId."
+  },
+  {
+    "severity": "high",
+    "area": "timeoff/balances",
+    "issue": "runCarryOver бере rest = available(balance(fromYear)), а available віднімає pendingDays. Заявка, подана в грудні й не погоджена до запуску перенесення, зменшує перенесений залишок; після її погодження в січні USAGE спишеться з fromYear (за calcDaysByYear), і ті самі дні втрачаються двічі. Дзеркально — заявка через межу року (28.12–05.01, явно передбачена E1 і seed) створює pending у ДВОХ роках, і в наступному році баланс може бути ще не нарахований.",
+    "fix": "Порядок і формулу зафіксувати: (а) runCarryOver для fromYear блокувати, доки є PENDING-заявки, що зачіпають fromYear (повертати список як warning); (б) rest рахувати як entitled+carried+adjustment−used (БЕЗ pending); (в) після погодження заявки, що списує з fromYear уже після перенесення, автоматично створювати компенсуючий ADJUSTMENT −d у fromYear+1. Додати це в чек-лист §10.1."
+  },
+  {
+    "severity": "high",
+    "area": "timeoff/balances",
+    "issue": "runAccrual фільтрує employees по { isArchived: false, status: { not: TERMINATED } }, тому гілка `to = MIN(endOfYear, emp.terminationDate)` — мертвий код, а звільнений співробітник ніколи не отримає нарахування за відпрацьовану частину останнього місяця/року. При цьому terminateEmployee одразу ставить TERMINATED, а compensateOnTermination викликається ПІСЛЯ → компенсація рахується з недонарахованого балансу. Гроші при звільненні будуть занижені.",
+    "fix": "У terminateEmployee всередині тієї ж транзакції, ДО зміни статусу: викликати фінальне пропорційне донарахування (ACCRUAL до terminationDate включно, dedupeKey з kind='ACCRUAL_FINAL'), потім recomputeBalance, і лише потім TERMINATED + compensateOnTermination. У runAccrual фільтр змінити на «звільнені в межах цільового року теж включаються», покладаючись на вже наявну відсічку from > to."
+  },
+  {
+    "severity": "medium",
+    "area": "tech/date",
+    "issue": "todayUtc() = toDateOnly(new Date()) дає UTC-північ поточної UTC-дати, а Україна — UTC+2/+3. З 00:00 до 02:00–03:00 за Києвом «сьогодні» в системі дорівнює вчорашньому дню. Це прямо ламає R3 (минулі дати), R4 (minNoticeDays), E4 («повертаються дні від завтра»), «Хто сьогодні відсутній» і підсвітку сьогодні в календарі. Плюс toDateOnly(Date) використовує date-fns format() — форматування у ЛОКАЛЬНІЙ TZ сервера; для сервера в TZ з від'ємним зсувом дата з'їде на добу назад.",
+    "fix": "Ввести бізнес-таймзону: BUSINESS_TZ='Europe/Kyiv'. todayUtc() = toDateOnly(рядок з Intl.DateTimeFormat('sv-SE',{timeZone:BUSINESS_TZ}).format(now)) — дає 'yyyy-MM-dd' у київському часі. У toDateOnly(Date) прибрати date-fns format і брати d.toISOString().slice(0,10) (вхід за інваріантом уже UTC-північ). Додати юніт-тест з підміненим TZ=Pacific/Honolulu."
+  },
+  {
+    "severity": "medium",
+    "area": "timeoff/approval",
+    "issue": "resolveRoute для HR-кроку лишає approverId = null («бере будь-який HR/ADMIN»), а індекс і вкладка «Очікують мого рішення» описані через @@index([approverId, status]). Запит для HR-користувача не визначений і за approverId нічого не знайде. Додатково §1.4 дає право погоджувати керівнику ВІДДІЛУ (Department.head), який у LeaveApproval.approverId взагалі не з'являється — його черга буде порожньою, попри наявне право.",
+    "fix": "Явно описати запит черги: WHERE status='PENDING' AND step = request.currentStep AND ( approverId = me.employeeId OR (approverId IS NULL AND role='HR' AND session.role IN (HR,ADMIN)) OR (role='MANAGER' AND request.employee.departmentId IN headedDepartmentIds(me)) ). Додати індекс @@index([role, status]) для HR-гілки. Ту саму умову винести в єдину чисту функцію canDecide(session, request, approval), яку використовують і черга, і decideApproval."
+  },
+  {
+    "severity": "medium",
+    "area": "data-model/approval",
+    "issue": "LeaveApproval має @@unique([requestId, step]), а маршрут будується заново при кожному поданні. Сценарій REQUEST_CHANGES → DRAFT → повторний submit (а також зміна managerId між подачами) впаде на P2002 або мовчки залишить старі рядки зі status=PENDING/REJECTED, через які nextStep() поверне неправильний крок. Історія попереднього раунду погодження при цьому втрачається.",
+    "fix": "Додати LeaveApproval.round Int @default(1) і змінити ключ на @@unique([requestId, round, step]). При повторному submit: round = max(round)+1, старі рядки лишаються як історія (ApprovalTimeline їх показує згорнутими), nextStep()/currentStep працюють лише в межах поточного round."
+  },
+  {
+    "severity": "medium",
+    "area": "timeoff/balances",
+    "issue": "Дві помилки в assertBalance: (1) перевірка maxPerYear стоїть ПІСЛЯ раннього виходу `ЯКЩО НЕ type.affectsBalance → ВИЙТИ`, тож річний ліміт структурно неможливо застосувати до типів без балансу (сьогодні пронесло лише випадково, бо обидва типи з maxPerYear мають affectsBalance=true); (2) usedThisYear = b.usedDays + b.pendingDays, але за формулою recomputeBalance у usedDays входять ще COMPENSATION і EXPIRY, які не є «використаними днями відпустки» → ліміт спрацює передчасно і заблокує законні заявки.",
+    "fix": "Винести перевірку maxPerYear з-під гілки affectsBalance у окрему функцію assertYearlyLimit, яка рахує спожите ПРЯМО з заявок: SUM(daysCount по році) для status IN ('PENDING','APPROVED') цього типу і року. У recomputeBalance розвести used на usedDays (тільки USAGE + USAGE_REVERSAL) і окремі поля compensatedDays / expiredDays."
+  },
+  {
+    "severity": "medium",
+    "area": "timeoff/balances",
+    "issue": "DAY_OFF (Відгул за роботу у вихідний) має defaultEntitlement = 0, affectsBalance = true, allowNegativeBalance = false і не входить у NON_CARRYABLE... тобто баланс завжди 0 і жодна заявка на відгул ніколи не пройде R6. Механізму, який кредитує відгул за фактично відпрацьований вихідний, у специфікації немає взагалі (немає ні обліку робочого часу, ні події «працював у свято»).",
+    "fix": "Або: (а) прибрати DAY_OFF з accrual-циклу (defaultEntitlement = null) і явно описати, що дні кредитуються HR через adjustBalance/ADJUSTMENT з обов'язковою причиною «Робота у вихідний DD.MM» — і додати цю дію в UI /leaves/balances; або (б) додати кнопку «Зарахувати відгул» на картці співробітника, що створює ADJUSTMENT +1. Без одного з двох тип непрацездатний."
+  },
+  {
+    "severity": "medium",
+    "area": "data-model/integrity",
+    "issue": "LeaveEvent.actorId і LeaveLedgerEntry.createdById — голі String без relation і без FK. Це два ключові аудитні поля (хто зробив рух днів, хто змінив статус), і вони можуть містити будь-що: id користувача, id співробітника, порожній рядок. Джойн до імені неможливий без ручного findMany, узгодженість не гарантована навіть із PRAGMA foreign_keys=ON.",
+    "fix": "Замінити на явні опційні relation: actorEmployeeId/actorEmployee (Employee?, SetNull) + actorUserId/actorUser (User?, SetNull) — так само, як уже зроблено в AuditLog. Для LeaveLedgerEntry.createdById — createdByUser User? @relation(onDelete: SetNull). Додати @@index([actorEmployeeId])."
+  },
+  {
+    "severity": "medium",
+    "area": "data-model",
+    "issue": "EmployeeStatus містить ON_LEAVE і MATERNITY_LEAVE, але жоден процес їх не встановлює і не знімає: погодження/початок/завершення відпустки статус не чіпає. Фільтр «статус» на /employees, бейджі і seed (1 MATERNITY_LEAVE) будуть систематично брехати, а два джерела правди про відсутність (status і APPROVED-заявки) розійдуться назавжди.",
+    "fix": "Прибрати ON_LEAVE/MATERNITY_LEAVE зі статусів як стан і рахувати відсутність похідно з APPROVED LeaveRequest на сьогодні (isAbsentToday у DTO + окремий фільтр «Зараз відсутні»). Якщо статуси лишаються — описати планове завдання/тригер у decideApproval і в нічному джобі, що синхронізує їх, і зафіксувати, що вони НЕ впливають на права й розрахунки."
+  },
+  {
+    "severity": "medium",
+    "area": "data-model",
+    "issue": "Position @@unique([title, departmentId]) при nullable departmentId не працює: SQLite (і Postgres) вважають NULL-и різними, тож можна створити необмежену кількість посад «Бухгалтер» без відділу, а мікрокопі «Така посада вже існує у цьому відділі» ніколи не спрацює. Симетрична проблема: Department.name @unique — глобальний, тому підвідділ «Аналітика» не можна створити одночасно під «Розробкою» і «Маркетингом», що для вкладеної оргструктури — реальне обмеження.",
+    "fix": "Position: додати departmentKey String @default(\"\") = departmentId ?? \"\" і поставити @@unique([title, departmentKey]). Department: замінити @@unique(name) на parentKey String @default(\"\") + @@unique([name, parentKey]), лишивши code @unique як глобальний природний ключ."
+  },
+  {
+    "severity": "medium",
+    "area": "tech",
+    "issue": "PRAGMA foreign_keys — налаштування рівня З'ЄДНАННЯ, а не бази. План «виконати prisma.$executeRawUnsafe('PRAGMA foreign_keys = ON') при старті в instrumentation.ts» не покриває: (а) інші з'єднання, якщо адаптер їх відкриє, (б) окремі процеси — prisma studio, seed (tsx prisma/seed.ts), скрипти міграції, (в) dev-HMR з новим глобальним клієнтом. При вимкнених FK onDelete:Restrict на LeaveType і SetNull на довідниках мовчки не діють — тобто ключова гарантія цілісності відсутня саме там, де її найлегше не помітити.",
+    "fix": "Створювати better-sqlite3 Database вручну, виконувати PRAGMA foreign_keys=ON і journal_mode=WAL на ньому і передавати готовий інстанс в PrismaBetterSqlite3, а не url. Ту саму фабрику імпортувати в prisma/seed.ts і будь-які скрипти. Додати перевірку в /api/health: SELECT * FROM pragma_foreign_keys() → 1, інакше 503."
+  },
+  {
+    "severity": "medium",
+    "area": "timeoff",
+    "issue": "terminateEmployee описує лише наслідки для власних заявок звільненого, але не для чужих, де він фігурує: (а) LeaveApproval.approverId = звільнений на десятках PENDING-заявок — рядки лишаються, черга висить, E6 пропонує тільки HR-override вручну; (б) LeaveRequest.substituteId = звільнений на майбутніх APPROVED-заявках — заміщувача фізично немає, попередження нікому не показується.",
+    "fix": "У ту саму транзакцію додати: PENDING-кроки, де approverId = звільнений, переприв'язати на його managerId (або перевести role=MANAGER→HR, якщо керівника немає) з LeaveEvent-причиною; майбутні заявки з substituteId = звільнений — обнулити substituteId і поставити warning на заявці «Потрібно призначити нового заміщувача», показати HR у діалозі звільнення поряд із «Невикористані дні: N»."
+  },
+  {
+    "severity": "medium",
+    "area": "tech",
+    "issue": "LeaveRequest.number @unique формату ЗВ-2026-000042 генерується в lib/numbering.ts, спосіб не описаний. Очевидна реалізація (count/max по році + 1) — це read-then-write усередині транзакції подання: при двох одночасних поданнях отримаємо P2002 і збій цілком валідної заявки, а користувач побачить загальне «Не вдалося зберегти».",
+    "fix": "Додати модель NumberSequence { scope String @id, year Int, last Int } і брати номер атомарним UPDATE ... SET last = last + 1 RETURNING last у тій самій транзакції (для SQLite — послідовний писар, для Postgres — SELECT ... FOR UPDATE). Альтернативно — обгорнути submit у retry на P2002 (до 3 спроб). Явно зафіксувати вибір у §7.4 фази 7."
+  },
+  {
+    "severity": "medium",
+    "area": "timeoff",
+    "issue": "Півдні описані суперечливо і неповно. HalfDayPart = NONE|FIRST|SECOND, але calcDays віднімає 0.5 за будь-яке значення != NONE, тобто FIRST і SECOND розрізняються лише семантично — а семантика («яку половину дня людина відсутня» чи «яку працює») ніде не задана. R5 при цьому посилається на неіснуючі значення SECOND_HALF/FIRST_HALF і обіцяє, що вони не конфліктують — реалізувати цю перевірку за поточною моделлю неможливо. Нормалізація «start==end і FIRST+SECOND → NONE/NONE (повний день)» суперечлива: користувач, що позначив обидві половини, очевидно хотів 0 днів або цілий день, але не отримає жодного повідомлення.",
+    "fix": "Зафіксувати семантику в labels/схемі: FIRST = відсутній у першій половині дня, SECOND = у другій. У R5 порівнювати саме halfDayStart/halfDayEnd крайніх днів (конфлікту немає лише коли одна заявка FIRST, інша SECOND на ту саму дату). Комбінацію start==end + FIRST + SECOND відхиляти валідацією zod (refine) з текстом «Оберіть одну половину дня або цілий день», а не тихо нормалізувати."
+  },
+  {
+    "severity": "low",
+    "area": "data-model",
+    "issue": "LeaveRequest.currentStep дублює стан, який за рішенням №5 має жити в LeaveApproval («крок зберігається в LeaveApproval, а не в статусі»), і при цьому nextStep() виводиться з LeaveApproval. Два джерела правди для одного значення розійдуться при HR-override, SKIPPED-кроках і повторному поданні.",
+    "fix": "Або прибрати currentStep і скрізь читати nextStep(request.approvals), або залишити суто як денормалізацію з жорстким правилом: currentStep оновлюється ВИКЛЮЧНО в тій самій транзакції, що й LeaveApproval.status, і перевіряється в recompute-скрипті цілісності."
+  },
+  {
+    "severity": "low",
+    "area": "data-model",
+    "issue": "Holiday.year — денормалізація date, нічим не пов'язана: можна записати date=2026-01-01, year=2025, і /settings/holidays та @@index([year, kind]) почнуть брехати. Так само LeaveBalance.unit і LeaveLedgerEntry.year можуть розійтися з LeaveType.unit і датами заявки.",
+    "fix": "Виводити year у Server Action із date (`date.getUTCFullYear()`), ніколи не приймати з форми — прибрати з HolidayInput у zod. Для LeaveBalance.unit — теж заповнювати з LeaveType на момент upsert і не давати редагувати; додати перевірку в recomputeAllBalances."
+  },
+  {
+    "severity": "low",
+    "area": "tech/search",
+    "issue": "@@index([searchKey]) не використовуватиметься запитом where.searchKey = { contains: q }, бо LIKE '%q%' з провідним wildcard не може спиратися на B-tree — індекс лише збільшує вартість запису. У §2.1 і §6.10 це подано як робоче рішення пошуку.",
+    "fix": "Або прибрати індекс і чесно задокументувати повний скан (для ~сотень співробітників це нормально), або перейти на SQLite FTS5-таблицю employee_fts, синхронізовану тригерами. У плані міграції на Postgres це вже враховано (pg_trgm) — зафіксувати, що на SQLite індекс декоративний."
+  },
+  {
+    "severity": "low",
+    "area": "data-model/auth",
+    "issue": "User.email @unique і Employee.workEmail @unique — незалежні поля без узгодження. createUserAccount(employeeId, email, role) приймає довільний email, тож логін розійдеться з робочою поштою в картці; зміна workEmail в employees.ts не оновлює User.email. Плюс workEmail — NOT NULL @unique, тому звільнений назавжди «займає» адресу, і її не можна перевикористати для нового співробітника.",
+    "fix": "У createUserAccount за замовчуванням підставляти employee.workEmail і валідувати збіг (або явно позначати «інша адреса для входу»). У updateEmployee при зміні workEmail — синхронізувати User.email у тій самій транзакції або блокувати зміну з підказкою. Для звільнених розглянути звільнення адреси: при TERMINATED переносити workEmail у поле archivedWorkEmail і знімати unique-конфлікт."
+  },
+  {
+    "severity": "high",
+    "area": "permissions",
+    "issue": "Право погоджувати визначається структурно (Employee.managerId / Department.head), а доступ до /leaves/approvals — за User.role, яка явно НЕ виводиться з наявності підлеглих (§1.4). Керівник із роллю EMPLOYEE отримає LeaveApproval-кроки, але не побачить пункт меню, отримає 403 на сторінці й не пройде assertCan('leave:approve') → заявки залипають назавжди.",
+    "fix": "Розв'язати одним із двох способів: (а) assertCan('leave:approve') перевіряє НЕ роль, а факт `approval.approverId === session.employeeId || isDeptHead || role in (HR,ADMIN)`, і /leaves/approvals доступна будь-кому, у кого є хоч один крок; (б) інваріант «призначення підлеглих/головування у відділі автоматично підвищує User.role до MANAGER» + перевірка в createEmployee/updateEmployee/setDepartmentHead. Обрати (а), додати в чек-лист §10.1 кейс «погоджувач із роллю EMPLOYEE»."
+  },
+  {
+    "severity": "high",
+    "area": "security",
+    "issue": "Немає жодних вимог до cookie сесії та строку життя JWT: не вказано httpOnly/secure/sameSite/maxAge/exp, немає ротації. Плюс tokenVersion++ передбачено лише для terminate/changeRole/deactivate, але НЕ для changeOwnPassword і resetPassword — після зміни/скидання пароля вкрадений токен лишається валідним до кінця життя (яке теж не визначене).",
+    "fix": "Зафіксувати: cookie `session`, httpOnly, sameSite=lax, secure у prod, path=/, maxAge 8 год; JWT з `exp` = тому ж значенню; requireSession звіряє tokenVersion з БД (з React.cache — один запит на рендер). Додати tokenVersion++ у changeOwnPassword, resetPassword і в кожну дію, що змінює email акаунта."
+  },
+  {
+    "severity": "high",
+    "area": "security",
+    "issue": "`redirect(searchParams.from ?? '/')` у signIn — класичний open redirect: `?from=//evil.com` або `?from=https://evil.com` виведе користувача з домену одразу після успішного логіна.",
+    "fix": "Санітизація: приймати `from` тільки якщо `from.startsWith('/') && !from.startsWith('//')`, інакше '/'. Ту саму перевірку — у proxy.ts при формуванні `from`."
+  },
+  {
+    "severity": "high",
+    "area": "security",
+    "issue": "Route Handler `GET /api/search?q=` (⌘K, Combobox) описаний без жодної згадки про requireSession та фільтрацію за роллю, хоча віддає співробітників, відділи й посади. Для EMPLOYEE/MANAGER це обхід усієї матриці §3.2 і скорочених DTO — достатньо смикнути ендпоінт напряму. Те саме стосується previewLeaveDays, який приймає employeeId і повертає balanceBefore/balanceAfter будь-кого.",
+    "fix": "У §5.1 додати правило: Route Handler підпадає під той самий скелет (requireSession → assertCan → zod), і /api/search повертає виключно `toEmployeeShortDto` з тим самим scope-фільтром, що й listEmployees. У previewLeaveDays явно: `assertCan(session,'leave:create-for', employeeId)`."
+  },
+  {
+    "severity": "high",
+    "area": "tech",
+    "issue": "Авторизація описана як `requireSession()` у `(dashboard)/layout.tsx`. Layout у App Router не є межею безпеки: він не перерендериться на м'яких навігаціях і не гарантує виконання перед вкладеним сегментом (офіційна рекомендація Next — перевірка в Data Access Layer, а не в layout).",
+    "fix": "Інваріант: layout робить ЛИШЕ рендер шеллу; кожна `page.tsx` починається з `requireSession()` + `requireRole(...)`, а кожна функція в `src/server/queries/*` самостійно робить requireSession і scope-фільтр (вона вже приймає session — зробити її джерелом істини, а не аргументом ззовні)."
+  },
+  {
+    "severity": "high",
+    "area": "timeoff",
+    "issue": "REQUEST_CHANGES повертає заявку в DRAFT, але існуючі рядки LeaveApproval не описано що робити. При повторному submitLeaveRequest buildRoute створить кроки з тими самими `step` → порушення `@@unique([requestId, step])` і падіння транзакції. Симетрична проблема: HR редагує PENDING-заявку (updateLeaveRequest) і змінює дати вже після погодження керівником — попереднє рішення стосувалося інших дат.",
+    "fix": "У leave-service визначити `resetRoute(tx, requestId)`: усі PENDING/APPROVED кроки → SKIPPED з `LeaveEvent`, потім buildRoute створює новий набір із `step` продовженням нумерації (або зняти @@unique і додати `attempt Int`). Для HR-редагування PENDING зі зміною дат/типу — примусово скидати маршрут і currentStep=0 + подія «Заявку змінено, погодження перезапущено»."
+  },
+  {
+    "severity": "high",
+    "area": "timeoff",
+    "issue": "`recomputeBalance` перебудовує кеш із журналу, а pendingDays у журналі свідомо відсутній. Якщо upsert пише повний набір полів — pendingDays занулиться, і чек-лист «recomputeAllBalances не змінює жодного балансу» провалиться на будь-якій системі з активними PENDING. Плюс немає жодного способу відремонтувати «осиротілий» pending після збою між транзакціями.",
+    "fix": "Явно задокументувати: recomputeBalance НЕ торкається pendingDays (перелічити оновлювані поля поіменно). Додати `recomputePending(tx, employeeId, typeId, year)` = сума calcDaysByYear по всіх PENDING-заявках, і викликати її разом із recomputeAllBalances."
+  },
+  {
+    "severity": "high",
+    "area": "timeoff",
+    "issue": "`runAccrual` вибирає `employee.findMany({ status: { not: TERMINATED } })`, але формула прорати використовує `emp.terminationDate` — звільнені ніколи не отримають нарахування за відпрацьовану частину року, тож `compensateOnTermination` рахуватиме компенсацію від заниженого entitled. Порядок «спочатку terminate, потім compensate» гарантує помилку.",
+    "fix": "У terminateEmployee всередині тієї ж транзакції викликати runAccrual для (employee, поточний рік) до зміни статусу, або зняти фільтр за статусом у runAccrual і покладатися виключно на вікно [hireDate, terminationDate]. Додати в чек-лист: «звільнення 15.07 → entitled ≈ 28*196/365»."
+  },
+  {
+    "severity": "medium",
+    "area": "timeoff",
+    "issue": "`runCarryOver` переносить `available(balance(fromYear))`, а available віднімає pendingDays. Заявка, подана в грудні й ще не погоджена, зменшує перенесення; після її відхилення в січні дні просто зникають (у fromYear вже нічого не переносять, а CARRY_OVER записаний зі старою сумою й ідемпотентність не дасть перерахувати).",
+    "fix": "Для перенесення використовувати базу без pending: `entitled + carried + adjustment - used`. Або блокувати runCarryOver за наявності PENDING-заявок у fromYear зі списком «Спершу закрийте N заявок»."
+  },
+  {
+    "severity": "medium",
+    "area": "data-model",
+    "issue": "Ідемпотентність runAccrual/runCarryOver побудована на попередньому SELECT без унікального індексу в БД. Два паралельні запуски (або подвійний клік на «Нарахувати») пройдуть обидві перевірки і подвоять баланс. Так само `LeaveRequest.number @unique` генерується без стратегії при гонці → сира помилка P2002 у користувача.",
+    "fix": "Додати `@@unique([employeeId, leaveTypeId, year, kind, month])` для ACCRUAL/CARRY_OVER (для решти kind month=null не заважає, але тоді потрібен окремий службовий discriminator — простіше окрема таблиця-замок або `@@unique` на sequence-полі). Для numbering — лічильник у таблиці з UPDATE...RETURNING всередині транзакції + один retry на P2002."
+  },
+  {
+    "severity": "medium",
+    "area": "scope",
+    "issue": "MVP оголошено як 2 модулі, але в план втягнуто: AuditLog + вкладка «Історія змін», ⌘K CommandPalette, дзвіночок сповіщень, завантаження файлів із власним ACL-роутом, масові погодження, експорт CSV, shortenApprovedLeave, recomputeAllBalances, compensateOnTermination, півдні, WORKING_SATURDAY, пісочниця _kit. Оцінка 12–14 днів на це нереалістична, а кожен із пунктів має власний хвіст крайніх випадків.",
+    "fix": "Винести у Фазу 12 (post-MVP): ⌘K, дзвіночок, вкладення (E20 + /api/uploads), decideBulk, exportBalancesCsv, вкладка audit (AuditLog писати, UI не робити), shortenApprovedLeave. Залишити в MVP: заявка → погодження → баланс → календар. Це знімає ~4 дні і два ризикові підсистеми (файли, edge-пошук)."
+  },
+  {
+    "severity": "medium",
+    "area": "ux",
+    "issue": "Продукт побудований навколо погоджень, але сповіщень немає взагалі: ні моделі Notification, ні email, ні навіть in-app списку — лише лічильник на дзвіночку. Керівник дізнається про заявку, тільки якщо сам зайде. `approvalOverdueDays` існує, але нікому не сигналить.",
+    "fix": "Мінімум для MVP: badge у сайдбарі біля «На погодженні» (не тільки в топбарі) + рядок «Очікує вашого рішення N дн.» на Панелі. У беклог — модель Notification + дайджест на пошту. Інакше показник «час до рішення» буде катастрофічним і це вилізе на демо."
+  },
+  {
+    "severity": "medium",
+    "area": "permissions",
+    "issue": "EMPLOYEE не має доступу ні до /leaves/balances, ні до /leaves/balances/[employeeId] (виноска 6) — тобто не може побачити журнал LeaveLedgerEntry власних днів. Питання «звідки у мене 19.5 дня» не має відповіді в UI, а це найчастіший тікет у HR.",
+    "fix": "Дозволити EMPLOYEE `/leaves/balances/[employeeId]` лише для `employeeId === session.employeeId` (сторінка вже параметризована, витрати нульові). Зі смуги BalanceStrip зробити посилання «Історія нарахувань»."
+  },
+  {
+    "severity": "medium",
+    "area": "permissions",
+    "issue": "Приватність медичних даних захищена лише за межами відділу («чужий відділ → Відсутній»). Всередині відділу колеги бачать тип «Лікарняний / Догляд за хворою дитиною / Вагітність та пологи» з ПІБ — тобто рівно ті дані, заради яких і вводилося обмеження.",
+    "fix": "Правило будувати не за відділом, а за типом: `payKind === STATE_FUNDED || code.startsWith('SICK') || MATERNITY || CHILDCARE` → для всіх, крім самого співробітника, його керівника, HR і ADMIN, показувати «Відсутній». Реалізувати в `toCalendarDto(request, viewer)`, а не у фільтрі запиту."
+  },
+  {
+    "severity": "medium",
+    "area": "permissions",
+    "issue": "`updateEmployee(input)` — одна дія на два різні контракти («ADMIN|HR — повна схема; власник — selfUpdateSchema»). Класична діра: власник надсилає повний payload із managerId/departmentId/positionId/status, а розгалуження за роллю легко забути або зробити після parse повної схеми.",
+    "fix": "Розділити на дві дії: `updateEmployee` (assertRole ADMIN|HR, fullSchema) і `updateOwnContacts` (selfUpdateSchema, employeeId береться з session і НЕ приймається з input). Те саме для /profile. У чек-лист §10.1 додати: EMPLOYEE надсилає role/managerId у себе → поле мовчки ігнорується або 403."
+  },
+  {
+    "severity": "medium",
+    "area": "tech",
+    "issue": "`PRAGMA foreign_keys = ON` — властивість З'ЄДНАННЯ, а не бази. Виконання `$executeRawUnsafe` один раз в instrumentation.ts не гарантує застосування до всіх з'єднань пулу better-sqlite3, а без FK усі `Restrict`/`SetNull` (LeaveType, Department, User.employeeId) мовчки перестають працювати — і це не впаде, а тихо зіпсує дані. Плюс не задано `busy_timeout`: інтерактивні транзакції R1–R13 під WAL дадуть SQLITE_BUSY при паралельних поданнях.",
+    "fix": "Передавати прагми через конфіг адаптера при створенні з'єднання (PrismaBetterSqlite3 приймає опції better-sqlite3), а не разовим запитом. Обов'язково додати `PRAGMA busy_timeout = 5000`. У чек-лист: спроба видалити LeaveType з історією має падати з P2003."
+  },
+  {
+    "severity": "medium",
+    "area": "tech",
+    "issue": "`unstable_cache(60s, tag:'org-tree')` для оргдерева: (1) в Next 16 це legacy API на користь `'use cache'`; (2) кеш глобальний, а дерево віддається різним ролям — якщо в OrgNode колись потрапить щось поза скороченим DTO або дерево фільтруватиметься під MANAGER, це витік між користувачами; (3) 60 с суперечить §1.3 п.4 «усі дані персоналізовані per-request».",
+    "fix": "Кешувати ЛИШЕ сирий знеособлений набір (id, fullName, positionTitle, departmentName, avatarUrl, managerId) — публічний за визначенням, — а фільтрацію/збагачення робити після кешу per-request. Ключ кешу без session. Або взагалі прибрати кеш для MVP-масштабу (~87 записів, одна вибірка)."
+  },
+  {
+    "severity": "medium",
+    "area": "ux",
+    "issue": "Чекбокс «Ознайомлений» вмикає `acknowledgeWarnings`, який приходить із клієнта. Якщо сервер не перегенерує попередження й не звірить їх, прапорець стає універсальним обходом R4/R12/попередження про мінусовий баланс — достатньо надіслати `acknowledgeWarnings: true` без жодного UI.",
+    "fix": "Сервер у submitLeaveRequest перераховує warnings і вимагає, щоб клієнт надіслав `acknowledgedCodes: string[]`, що збігається з поточним набором кодів. Розбіжність → { ok:false, warnings } і повторний показ форми, без збереження."
+  },
+  {
+    "severity": "medium",
+    "area": "data-model",
+    "issue": "Три незалежні прапорці стану співробітника без інваріанта: `status` (включно з ON_LEAVE/MATERNITY_LEAVE), `isArchived`+`archivedAt`, `terminationDate`. Ніде не описано, хто і коли ставить ON_LEAVE — модуль відпусток статус не чіпає, тож «Хто сьогодні відсутній» рахується із заявок, а бейдж на картці показуватиме ACTIVE. Два джерела істини про одне й те саме.",
+    "fix": "Прибрати ON_LEAVE і MATERNITY_LEAVE з EmployeeStatus (залишити PROBATION/ACTIVE/TERMINATED) і виводити «У відпустці / На лікарняному» як обчислюваний бейдж із APPROVED-заявок на сьогодні. Записати інваріант: TERMINATED ⟺ terminationDate != null; isArchived — незалежна видимість у списках."
+  },
+  {
+    "severity": "medium",
+    "area": "data-model",
+    "issue": "`Employee.workEmail String @unique` — обов'язкове й унікальне, хоча §0 спеціально зробила personnelNumber опційним «щоб не блокувати швидке створення картки». Робочої пошти немає у складських/виробничих співробітників і в тих, кому акаунт не створюють (сценарій прямо передбачений у §9.7). Заведення такої картки буде неможливим або породить фейкові адреси.",
+    "fix": "`workEmail String? @unique`. Логін жорстко прив'язати до `User.email` (він уже unique і обов'язковий), а не до workEmail. У createEmployee вимагати workEmail лише коли одночасно створюється акаунт."
+  },
+  {
+    "severity": "medium",
+    "area": "data-model",
+    "issue": "`Position @@unique([title, departmentId])`: у SQLite (і Postgres) NULL != NULL, тож для загальнокорпоративних посад із `departmentId = null` унікальність не діє — можна створити десять «Бухгалтер», а мікрокопі «Така посада вже існує у цьому відділі» ніколи не спрацює. Аналогічно `LeaveLedgerEntry.createdById` і `LeaveEvent.actorId` — рядки без FK і без relation, на відміну від решти схеми.",
+    "fix": "Ввести sentinel: `departmentId String @default(\"GLOBAL\")` з псевдо-відділом, або додати службове поле `titleKey = title + '|' + (departmentId ?? '-')` з @unique. createdById/actorId — зробити повноцінними relation на Employee/User з onDelete: SetNull, інакше журнал не з'єднати з іменами без ручних join'ів."
+  },
+  {
+    "severity": "medium",
+    "area": "timeoff",
+    "issue": "`resolveRoute` п.4: «якщо в системі один HR → маршрут стає AUTO». Це означає, що єдиний HR (типова конфігурація для компанії на 87 осіб) погоджує собі відпустки автоматично — прямо суперечить «Неможливо погодити власну заявку» і робить дірку в контролі саме для найпривілейованішої ролі.",
+    "fix": "Fallback-порядок: інший HR → ADMIN → керівник HR за managerId → і лише якщо нікого немає, AUTO з обов'язковим LeaveEvent і бейджем «Погоджено автоматично: немає доступного погоджувача» у списку HR."
+  },
+  {
+    "severity": "medium",
+    "area": "timeoff",
+    "issue": "`proRataToDate(...)` використовується в assertBalance (правило 6 місяців, ст. 10), але такої функції немає ні в переліку leave-balance.ts (§4), ні в описі §6.3 — семантика невизначена (від hireDate чи від початку року? з workRate чи без? чи узгоджена з формулою runAccrual, яка прораховує через daysInYear?). Два різні розрахунки одного й того самого дадуть розбіжність, помітну користувачеві.",
+    "fix": "Винести єдину функцію `entitlementToDate(type, employee, date): number` (та сама формула, що в runAccrual, з `to = date`) і використовувати її і в нарахуванні, і в правилі 6 місяців, і в компенсації при звільненні."
+  },
+  {
+    "severity": "medium",
+    "area": "terminology",
+    "issue": "Колізія дієслова «Скасувати»: глосарій #29 закріплює його за доменною дією («Скасувати заявку»), але ConfirmDialog і модалки за замовчуванням мають кнопку «Скасувати» у значенні «закрити діалог». У діалозі підтвердження скасування заявки буде дві кнопки «Скасувати». Окремо: глосарій #55 узаконює «Видалити» як стандартне CRUD-дієслово, тоді як інваріант §1.5 забороняє фізичне видалення — в UI має бути «Архівувати».",
+    "fix": "У labels.ts: dismiss-кнопка модалок = «Закрити» (у деструктивних підтвердженнях — «Ні, залишити»), доменна дія — «Скасувати заявку». З глосарію #55 прибрати «Видалити», додати «Архівувати / Відновити»; «Видалити» лишити виключно для DRAFT-заявки."
+  },
+  {
+    "severity": "medium",
+    "area": "terminology",
+    "issue": "Юридично застарілі та неточні підписи в labels.ts для української HR-системи 2026 року: `STATE_FUNDED: 'За рахунок ФСС'` — Фонд соцстрахування ліквідовано у 2023-му, виплати адмініструє ПФУ; `MATERNITY_LEAVE: 'У декреті'` — розмовне і зливає ст. 17 (вагітність і пологи) зі ст. 18 (догляд до 3 років); `GIG: 'ФОП / гіг-контракт'` змішує дві різні правові форми в одному enum-значенні.",
+    "fix": "`STATE_FUNDED: 'За рахунок ПФУ'` (або нейтрально «Оплата за рахунок держави»); `MATERNITY_LEAVE: 'Відпустка у зв'язку з вагітністю та пологами'`; розділити GIG на `FOP: 'ФОП (договір з підприємцем)'` і `GIG: 'Гіг-контракт (Дія.City)'`. Перед впровадженням дати глосарій на вичитку юристу/кадровику — так само як §9.5 вже вимагає для свят."
+  },
+  {
+    "severity": "medium",
+    "area": "data-model",
+    "issue": "Суперечності в таблиці 14 типів §9.4: `SICK_SELF` має `allowHalfDay ✔` при `unit = CALENDAR`, що E13 прямо анулює (мертва конфігурація, яка вводить в оману в /settings/leave-types); `MATERNITY` має defaultEntitlement 126 при `affectsBalance ✖`, тож runAccrual його ігнорує і 126 ніде не використовується; `DAY_OFF` має defaultEntitlement 0 + affectsBalance ✔, але жодна дія не описує, ЯК відгул зараховується (хто створює ACCRUAL за роботу у вихідний).",
+    "fix": "SICK_SELF → allowHalfDay ✖ (або unit = WORKING). MATERNITY → defaultEntitlement null, 126 перенести в `maxConsecutiveDays`/legalReference. Для DAY_OFF описати вхідну точку: HR через adjustBalance (ADJUSTMENT +1) з причиною «Робота у вихідний {дата}», і додати цей сценарій у §6.3 та в порожній стан «Баланси»."
+  },
+  {
+    "severity": "medium",
+    "area": "tech",
+    "issue": "`revalidatePath` як єдиний механізм узгодження не працює для міжкористувацьких сценаріїв, які тут центральні: керівник погоджує на /leaves/approvals — сторінка /leaves/my заявника та лічильник на дзвіночку в іншій сесії лишаються застарілими до перезавантаження. Специфікація подає це як розв'язану проблему.",
+    "fix": "Явно зафіксувати межу: revalidatePath оновлює лише дані актора. Для решти — сторінки з чергами й лічильниками роблять `export const dynamic = 'force-dynamic'` і читаються при кожній навігації; лічильник дзвіночка не кешувати. У документі додати рядок «реального часу немає, це усвідомлений компроміс MVP»."
+  },
+  {
+    "severity": "medium",
+    "area": "security",
+    "issue": "`LeaveType.colorHex` вводиться HR і рендериться інлайн-стилем — без валідації це і CSS-інʼєкція (`red; background: url(...)`), і гарантована проблема контрасту, бо HR може обрати #FFFF00 на білому. Окремо: `GET /api/uploads/[...path]` — catch-all сегмент без вимоги нормалізації шляху відкриває path traversal (`..%2f`), а перевірка ACL описана одним словом.",
+    "fix": "zod: `/^#[0-9A-Fa-f]{6}$/` + палітра-пресет із 12 перевірених кольорів у пікері. Для uploads: не приймати шлях узагалі — роут виду `/api/uploads/[requestId]/[fileId]`, шлях будується на сервері з БД-запису, ACL = ті самі права, що на перегляд заявки; перевірити, що resolved path лишається всередині базової директорії."
+  },
+  {
+    "severity": "low",
+    "area": "ux",
+    "issue": "Кнопка «Подати заявку» в сайдбарі відкриває модалку з тією ж формою, що й сторінка /leaves/new — два місця рендеру одного LeaveRequestForm із різною поведінкою після успіху (redirect vs закриття модалки + toast) і різними станами помилок. Це джерело розсинхрону і подвійних правок.",
+    "fix": "Один компонент `LeaveRequestForm` з пропом `onSuccess: 'redirect' | 'close'`; модалка — тонка обгортка. Або (простіше для MVP) кнопка робить `<Link href=\"/leaves/new\">`, а модалку відкласти."
+  },
+  {
+    "severity": "low",
+    "area": "ux",
+    "issue": "Перелік порожніх станів §7.7 не покриває половину екранів, де вони точно зустрінуться: календар без відсутностей у місяці, журнал LeaveLedgerEntry без записів, /settings/holidays на порожньому році, /settings/users, вкладки «Історія моїх рішень» та «Усі активні», вкладка «Історія змін», нульовий результат ⌘K, стан помилки Server Action (не порожньо, а «не вдалося завантажити»).",
+    "fix": "Дописати 8 рядків у таблицю §7.7 і додати окремий варіант EmptyState `tone=\"error\"` з кнопкою «Спробувати ще раз» для error.tsx — інакше кожен розробник вигадає свій текст, що зламає інваріант «жодних хардкод-рядків у JSX»."
+  },
+  {
+    "severity": "low",
+    "area": "tech",
+    "issue": "Розбіжності специфікації з фактичним репозиторієм, які спричинять дублювання файлів: §4 вимагає `src/lib/date.ts`, у репо вже є `src/lib/dates.ts` (множина); §4 згадує `cn.ts` і тут же — «ВЖЕ Є в utils.ts»; eslint.config.mjs не містить обіцяного `no-restricted-syntax`; package.json використовує `db:push`/`db:reset --force-reset`, а Додаток і Фаза 0 говорять про `migrate dev` + `prisma/migrations` — два несумісні робочі процеси.",
+    "fix": "Зафіксувати одну назву (`date.ts`, `utils.ts` як єдиний дім для cn) і перейменувати наявні файли у Фазі 0.0. Обрати міграції (не db push) і привести скрипти: `db:reset` = `prisma migrate reset`. Правило ESLint написати у Фазі 1.8 конкретним кодом, інакше воно не буде додане."
+  },
+  {
+    "severity": "low",
+    "area": "ux",
+    "issue": "`DatePicker` = native `<input type=\"date\" lang=\"uk\">`: атрибут lang НЕ впливає на формат відображення в Chrome — використовується локаль браузера/ОС, тож частина українських користувачів побачить mm/dd/yyyy. Також не задано min/max (можна вбити 0202 рік), а E16 покладається на «рядок без TZ», що вірно лише для цього контролу.",
+    "fix": "Прийняти обмеження свідомо і компенсувати: під полем — підпис-підказка з розібраною датою у форматі «12 черв. 2026» (як уже є formatDate), `min`/`max` = ±2 роки від сьогодні для більшості типів, і серверна zod-перевірка `dateOnly` на діапазон."
+  },
+  {
+    "severity": "low",
+    "area": "timeoff",
+    "issue": "Півдні в §6.2 п.4: при `start == end` нормалізується лише комбінація FIRST+SECOND. Введення FIRST+FIRST (або SECOND+SECOND) на одному дні дасть `days = 1 - 0.5 - 0.5 = 0` → R2 заблокує з повідомленням «Період не містить жодного дня, що враховується (усі дні — вихідні або святкові)», яке до ситуації не має стосунку.",
+    "fix": "Нормалізацію робити ширше: якщо start == end, halfDayEnd примусово NONE, а halfDayStart визначає половину. Плюс окремий текст помилки для випадку days == 0 при непорожньому робочому періоді."
+  }
+]

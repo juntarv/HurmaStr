@@ -9,7 +9,7 @@ type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "outline";
 type ButtonSize = "sm" | "md";
 
 const buttonVariants: Record<ButtonVariant, string> = {
-  primary: "bg-brand text-white hover:bg-brand-hover border-transparent",
+  primary: "bg-brand text-white hover:bg-brand-hover hover:shadow-lift border-transparent",
   secondary: "bg-surface text-ink border-line hover:bg-surface-muted",
   outline: "bg-transparent text-brand border-brand-line hover:bg-brand-soft",
   ghost: "bg-transparent text-ink-soft border-transparent hover:bg-surface-muted",
@@ -43,10 +43,19 @@ export function Button({
 
 // ================================ Картка =====================================
 
-export function Card({ className, ...props }: ComponentPropsWithoutRef<"div">) {
+export function Card({
+  className,
+  interactive,
+  ...props
+}: ComponentPropsWithoutRef<"div"> & { interactive?: boolean }) {
   return (
     <div
-      className={cn("bg-surface border border-line rounded-card shadow-card", className)}
+      className={cn(
+        "bg-surface border border-line rounded-card shadow-card",
+        interactive &&
+          "transition-[transform,box-shadow,border-color] duration-150 hover:-translate-y-px hover:border-line-strong hover:shadow-lift",
+        className,
+      )}
       {...props}
     />
   );

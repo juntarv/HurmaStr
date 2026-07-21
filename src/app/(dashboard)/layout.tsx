@@ -7,6 +7,8 @@ import { countPendingApprovalsFor } from "@/server/queries/leaves";
 import { SidebarNav } from "@/components/sidebar";
 import { UserMenu } from "@/components/user-menu";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { HeaderCrumb } from "@/components/header-crumb";
+import { PageFade } from "@/components/page-fade";
 import { LogoBadge } from "@/components/logo";
 import { Button } from "@/components/ui";
 import { ui } from "@/lib/labels";
@@ -52,9 +54,11 @@ export default async function DashboardLayout({
       </aside>
 
       <div className="flex min-w-0 flex-col">
-        <header className="sticky top-0 z-10 flex h-16 items-center justify-between gap-3 border-b border-line bg-surface px-4 sm:px-6">
+        <header className="sticky top-0 z-10 flex h-16 items-center justify-between gap-3 border-b border-line bg-surface/80 px-4 backdrop-blur-md sm:px-6">
           <div className="lg:hidden">{brand}</div>
-          <div className="hidden lg:block" />
+          <div className="hidden lg:block">
+            <HeaderCrumb />
+          </div>
           <div className="flex items-center gap-1.5">
             <ThemeToggle initial={theme} />
             <UserMenu fullName={session.fullName} email={session.email} role={session.role} />
@@ -72,7 +76,9 @@ export default async function DashboardLayout({
           </div>
         </details>
 
-        <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+        <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8">
+          <PageFade>{children}</PageFade>
+        </main>
       </div>
     </div>
   );

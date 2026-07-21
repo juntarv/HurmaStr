@@ -45,6 +45,9 @@
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, sans-serif;
 
   --radius-card: 0.85rem;
+
+  /* Тінь для картки/кнопки при наведенні (генерує утиліту shadow-lift). */
+  --shadow-lift: 0 6px 20px -6px rgba(20, 17, 12, 0.14), 0 2px 6px rgba(20, 17, 12, 0.05);
 }
 
 .dark {
@@ -76,6 +79,8 @@
   --color-danger: #f87171;
   --color-danger-soft: rgba(220, 38, 38, 0.16);
   --color-danger-line: rgba(220, 38, 38, 0.38);
+
+  --shadow-lift: 0 8px 24px -8px rgba(0, 0, 0, 0.6), 0 2px 6px rgba(0, 0, 0, 0.4);
 }
 
 :root {
@@ -112,4 +117,31 @@ input[type="date"] {
 }
 .dark .shadow-card {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+/* Тінь-підйом як утиліта (підтримує hover:shadow-lift). */
+@utility shadow-lift {
+  box-shadow: var(--shadow-lift);
+}
+
+/* Делікатна поява контенту сторінки при навігації. */
+@keyframes hs-fade {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.animate-page {
+  animation: hs-fade 0.28s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+/* Поважаємо системне «менше руху». */
+@media (prefers-reduced-motion: reduce) {
+  .animate-page {
+    animation: none;
+  }
 }

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { LogOut } from "lucide-react";
 import { logoutAction } from "@/server/actions/auth";
+import { Avatar } from "@/components/ui";
 import { roleLabels } from "@/lib/labels";
 import type { Role } from "@/generated/prisma/enums";
 
@@ -15,15 +16,24 @@ export function UserMenu({
   email: string;
   role: Role;
 }) {
+  // fullName приходить як «Прізвище Ім'я» — розкладаємо для аватара.
+  const [lastName = fullName, firstName = ""] = fullName.split(" ");
+
   return (
-    <div className="flex items-center gap-3">
-      <Link href="/profile" className="hidden text-right sm:block group">
-        <p className="text-sm font-medium leading-tight text-ink group-hover:text-brand">
-          {fullName}
-        </p>
-        <p className="text-xs leading-tight text-ink-muted">
-          {roleLabels[role]} · {email}
-        </p>
+    <div className="flex items-center gap-1.5">
+      <Link
+        href="/profile"
+        className="group flex items-center gap-2.5 rounded-xl px-1.5 py-1 transition-colors hover:bg-surface-muted"
+      >
+        <span className="hidden text-right leading-tight sm:block">
+          <span className="block text-sm font-medium text-ink group-hover:text-brand">
+            {fullName}
+          </span>
+          <span className="block text-xs text-ink-muted">
+            {roleLabels[role]} · {email}
+          </span>
+        </span>
+        <Avatar firstName={firstName} lastName={lastName} />
       </Link>
       <form action={logoutAction}>
         <button

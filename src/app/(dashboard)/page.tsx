@@ -79,7 +79,10 @@ export default async function DashboardPage() {
           ) : (
             <div className="grid grid-cols-2 gap-3 p-5 sm:grid-cols-4">
               {balances.map((b) => (
-                <div key={b.type.id} className="rounded-lg border border-line bg-surface-muted px-3 py-3">
+                <div
+                  key={b.type.id}
+                  className="rounded-lg border border-line bg-surface-muted px-3 py-3 transition-[transform,border-color] duration-150 hover:-translate-y-0.5 hover:border-brand-line"
+                >
                   <div className="mb-2 flex items-center justify-between">
                     <LeaveTypeIcon icon={b.type.icon} color={b.type.colorHex} className="size-5" />
                     {b.tracks && b.pending > 0 ? (

@@ -103,7 +103,7 @@ export default async function AssetsPage({
         <ul className="mb-5 flex flex-col gap-2">
           {assets.map((asset) => (
             <li key={asset.id}>
-              <Card className="flex flex-wrap items-center gap-x-4 gap-y-3 px-4 py-3">
+              <Card interactive className="flex flex-wrap items-center gap-x-4 gap-y-3 px-4 py-3">
                 <span className="flex size-10 items-center justify-center rounded-lg bg-surface-muted text-ink-soft">
                   <AssetCategoryIcon category={asset.category} className="size-5" />
                 </span>

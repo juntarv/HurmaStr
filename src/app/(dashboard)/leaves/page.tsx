@@ -95,7 +95,7 @@ export default async function MyLeavesPage() {
           {requests.map((request) => (
             <li key={request.id}>
               <Link href={`/leaves/${request.id}`} className="block">
-                <Card className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 transition-colors hover:border-line-strong">
+                <Card interactive className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
                   <LeaveTypeIcon
                     icon={request.leaveType.icon}
                     color={request.leaveType.colorHex}

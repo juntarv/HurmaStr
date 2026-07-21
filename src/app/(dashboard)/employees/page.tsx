@@ -143,7 +143,7 @@ export default async function EmployeesPage({
 
             return (
               <li key={employee.id}>
-                <Card className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 transition-colors hover:border-line-strong">
+                <Card interactive className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
                   <Avatar
                     firstName={employee.firstName}
                     lastName={employee.lastName}

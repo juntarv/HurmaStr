@@ -4,6 +4,7 @@ import { requireSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Avatar, Button, Card, CardHeader, Divider, EmptyState, PageHeader } from "@/components/ui";
 import { ProfileForm } from "./profile-form";
+import { ChangePasswordForm } from "./change-password";
 import { roleLabels } from "@/lib/labels";
 import { formatDateUk, tenureUk } from "@/lib/dates";
 
@@ -68,13 +69,19 @@ export default async function ProfilePage() {
         </div>
       </Card>
 
-      <Card>
+      <Card className="mb-5">
         <CardHeader title="Контактні дані" />
         <Divider />
         <ProfileForm values={employee} />
         <p className="px-5 pb-5 text-xs text-ink-muted">
           Посаду, відділ, керівника та дати змінює HR — зверніться до нього, якщо там помилка.
         </p>
+      </Card>
+
+      <Card>
+        <CardHeader title="Зміна пароля" />
+        <Divider />
+        <ChangePasswordForm />
       </Card>
     </div>
   );

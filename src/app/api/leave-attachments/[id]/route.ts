@@ -44,10 +44,19 @@ export async function GET(
   }
 
   const filename = encodeURIComponent(request.attachmentName ?? "dovidka");
+  // MIME задає клієнт при завантаженні, тож забороняємо браузеру «вгадувати»
+  // тип (nosniff) і обмежуємося безпечними типами — захист від XSS через
+  // підроблений файл, що видає себе за зображення.
+  const mime = request.attachmentMime ?? "application/octet-stream";
+  const safeMime = /^(image\/(jpeg|png|webp|heic)|application\/pdf)$/.test(mime)
+    ? mime
+    : "application/octet-stream";
   return new Response(new Uint8Array(data), {
     headers: {
-      "Content-Type": request.attachmentMime ?? "application/octet-stream",
+      "Content-Type": safeMime,
       "Content-Disposition": `inline; filename*=UTF-8''${filename}`,
+      "Content-Security-Policy": "default-src 'none'; sandbox",
+      "X-Content-Type-Options": "nosniff",
       "Cache-Control": "private, no-store",
     },
   });

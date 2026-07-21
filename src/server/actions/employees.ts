@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireSession, hashPassword } from "@/lib/auth";
-import { canManageEmployees, isSelf } from "@/lib/permissions";
+import { canManageEmployees, isAdmin, isSelf } from "@/lib/permissions";
 import {
   buildSearchKey,
   employeeCoreSchema,
@@ -210,6 +210,12 @@ export async function terminateEmployeeAction(
   if (!id || !dateRaw) return { ok: false, error: "Вкажіть дату звільнення" };
   if (isSelf(session, id)) return { ok: false, error: "Не можна звільнити себе" };
 
+  // Не-адмін не може звільнити (а отже вимкнути) адміністратора/HR.
+  const targetAccount = await prisma.user.findFirst({ where: { employeeId: id }, select: { role: true } });
+  if (targetAccount && (targetAccount.role === "ADMIN" || targetAccount.role === "HR") && !isAdmin(session)) {
+    return { ok: false, error: "Звільнити адміністратора/HR може лише адміністратор" };
+  }
+
   const terminationDate = new Date(dateRaw);
   if (Number.isNaN(terminationDate.getTime())) {
     return { ok: false, error: "Некоректна дата звільнення" };
@@ -275,11 +281,24 @@ export async function setCredentialsAction(
 
   const employee = await prisma.employee.findUnique({
     where: { id: employeeId },
-    select: { id: true, status: true, account: { select: { id: true } } },
+    select: { id: true, status: true, account: { select: { id: true, role: true } } },
   });
   if (!employee) return { ok: false, error: "Співробітника не знайдено" };
   if (employee.status === "TERMINATED") {
     return { ok: false, error: "Не можна створити доступ звільненому співробітнику" };
+  }
+
+  // Ескалація привілеїв: лише адміністратор може призначати ролі ADMIN/HR
+  // або редагувати доступ уже привілейованих акаунтів. Інакше HR міг би
+  // підняти себе до ADMIN чи перехопити акаунт адміністратора.
+  const currentRole = employee.account?.role ?? null;
+  if (!isAdmin(session)) {
+    if (role === "ADMIN" || role === "HR") {
+      return { ok: false, error: "Ролі «Адміністратор» і «HR» може призначати лише адміністратор" };
+    }
+    if (currentRole === "ADMIN" || currentRole === "HR") {
+      return { ok: false, error: "Змінювати доступ адміністратора/HR може лише адміністратор" };
+    }
   }
 
   // Логін має бути унікальним серед усіх акаунтів.
@@ -337,6 +356,14 @@ export async function disableAccessAction(employeeId: string): Promise<ActionRes
   const session = await requireSession();
   if (!canManageEmployees(session)) return { ok: false, error: "Недостатньо прав" };
   if (isSelf(session, employeeId)) return { ok: false, error: "Не можна вимкнути власний доступ" };
+
+  const account = await prisma.user.findFirst({
+    where: { employeeId },
+    select: { role: true },
+  });
+  if (account && (account.role === "ADMIN" || account.role === "HR") && !isAdmin(session)) {
+    return { ok: false, error: "Вимкнути доступ адміністратора/HR може лише адміністратор" };
+  }
 
   await prisma.user.updateMany({
     where: { employeeId },

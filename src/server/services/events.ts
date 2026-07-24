@@ -72,10 +72,18 @@ function toBrief(e: RawEmployee): EmployeeBrief {
   };
 }
 
-/** Переносить день/місяць дати у вказаний рік. */
+/**
+ * Переносить день/місяць дати у вказаний рік.
+ * Якщо в цільовому місяці немає такого числа (напр. 29 лютого у невисокосний
+ * рік), обрізаємо до останнього дня місяця — щоб подія не «перекотилась»
+ * на 1 березня, а показалась 28 лютого.
+ */
 function inYear(source: Date, year: number): Date {
   const d = toDateOnly(source);
-  return new Date(Date.UTC(year, d.getUTCMonth(), d.getUTCDate()));
+  const month = d.getUTCMonth();
+  const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  const day = Math.min(d.getUTCDate(), lastDay);
+  return new Date(Date.UTC(year, month, day));
 }
 
 /**
@@ -91,8 +99,10 @@ export async function getPersonalEvents(from: Date, to: Date): Promise<PersonalE
     select: { ...employeeSelect, birthDate: true, hireDate: true },
   });
 
-  // Діапазон може перетинати Новий рік, тому перевіряємо обидва роки.
-  const years = new Set([start.getUTCFullYear(), end.getUTCFullYear()]);
+  // Діапазон може перетинати межі років — перебираємо всі роки від початку
+  // до кінця (а не лише крайні), щоб не пропустити проміжний рік.
+  const years: number[] = [];
+  for (let y = start.getUTCFullYear(); y <= end.getUTCFullYear(); y++) years.push(y);
   const events: PersonalEvent[] = [];
 
   for (const employee of employees) {

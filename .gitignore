@@ -58,3 +58,6 @@ next-env.d.ts
 # Дизайн-хендоф (локальні артефакти, не в репо)
 *-hurmastr (1).png
 README (1).md
+
+# vitest scratch db
+.vitest.db

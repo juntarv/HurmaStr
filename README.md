@@ -22,6 +22,18 @@ npm run dev         # http://localhost:3000
 
 Першим ділом відредагуйте картку «Адміністратор Системи» — впишіть свої дані.
 
+## Деплой (Docker)
+
+Продакшн-деплой одним інстансом — див. **[DEPLOY.md](DEPLOY.md)**. Коротко:
+
+```bash
+cp .env.docker.example .env   # заповніть AUTH_SECRET
+docker compose up -d --build
+```
+
+Схема застосовується при старті; SQLite-БД і вкладення довідок зберігаються на
+томах (`hurma-data`, `hurma-storage`). Для HTTPS виставте `COOKIE_SECURE=true`.
+
 ## Змінні оточення (`.env`)
 
 | Змінна | Призначення |

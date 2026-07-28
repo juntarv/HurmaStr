@@ -1,0 +1,36 @@
+# Залежності й артефакти збірки — ставляться/збираються в контейнері
+node_modules
+.next
+out
+
+# Локальні бази та вкладення (у проді — на томах)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+.vitest.db
+storage
+
+# Секрети
+.env
+.env.local
+.env.*.local
+
+# Git та IDE
+.git
+.gitignore
+.vscode
+.idea
+
+# Тести й службові
+tests
+coverage
+
+# Дизайн-хендоф (локальні артефакти)
+*-hurmastr (1).png
+README (1).md
+
+# Інше
+npm-debug.log*
+*.log
+open-firewall.ps1

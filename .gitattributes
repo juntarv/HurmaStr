@@ -1,0 +1,4 @@
+# Shell-скрипти й entrypoint ЗАВЖДИ з LF — інакше в Linux/Docker
+# «bad interpreter: /bin/sh^M».
+*.sh text eol=lf
+docker-entrypoint.sh text eol=lf

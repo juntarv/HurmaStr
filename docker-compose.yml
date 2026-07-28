@@ -1,0 +1,38 @@
+# HurmaStr — деплой одним інстансом (SQLite).
+# Використання:
+#   1) cp .env.docker.example .env  та заповніть AUTH_SECRET
+#   2) docker compose up -d --build
+#
+# Дані зберігаються на іменованих томах:
+#   hurma-data     → SQLite-файл (/data/app.db)
+#   hurma-storage  → фото/скани довідок (/app/storage)
+# Робіть бекап саме цих томів.
+
+services:
+  hurmastr:
+    build: .
+    image: hurmastr:latest
+    container_name: hurmastr
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      # БД на томі — НЕ змінюйте шлях без міграції даних
+      DATABASE_URL: "file:/data/app.db"
+      # ОБОВ'ЯЗКОВО: довгий випадковий секрет для підпису сесій
+      AUTH_SECRET: "${AUTH_SECRET:?Задайте AUTH_SECRET у файлі .env}"
+      # true ЛИШЕ якщо застосунок відкрито через HTTPS (за реверс-проксі)
+      COOKIE_SECURE: "${COOKIE_SECURE:-false}"
+      # Перший адміністратор (створюється при першому старті)
+      SEED_ADMIN_EMAIL: "${SEED_ADMIN_EMAIL:-admin@hurma.local}"
+      SEED_ADMIN_PASSWORD: "${SEED_ADMIN_PASSWORD:-admin12345}"
+      # Демо-персонал у проді не створюємо
+      SEED_DEMO: "false"
+      RUN_SEED: "true"
+    volumes:
+      - hurma-data:/data
+      - hurma-storage:/app/storage
+
+volumes:
+  hurma-data:
+  hurma-storage:

@@ -49,8 +49,9 @@ next-env.d.ts
 *.db
 *.db-journal
 
-# .env.example треба комітити
+# шаблони env треба комітити
 !.env.example
+!.env.docker.example
 
 # Локальне сховище вкладень
 /storage

@@ -59,7 +59,7 @@ async function seedLeaveTypes() {
       icon: "palm", colorHex: "#16A34A", unit: "WORKING_DAYS" as const, payKind: "PAID" as const,
       affectsBalance: true, accrualMode: "MONTHLY" as const, accrualPerMonth: 2, annualEntitlement: null,
       minNoticeDays: 0, allowPastDates: false, requiresDocument: false, isMedical: false,
-      approvalRoute: "MANAGER_THEN_HR" as const, sortOrder: 10,
+      approvalRoute: "MANAGER_ONLY" as const, sortOrder: 10,
     },
     {
       code: "SICK_NO_DOC", nameUk: "Лікарняний без довідки",
@@ -67,7 +67,7 @@ async function seedLeaveTypes() {
       icon: "heart", colorHex: "#F87171", unit: "WORKING_DAYS" as const, payKind: "PAID" as const,
       affectsBalance: true, accrualMode: "ANNUAL" as const, accrualPerMonth: null, annualEntitlement: 2,
       minNoticeDays: 0, allowPastDates: true, requiresDocument: false, isMedical: true,
-      approvalRoute: "HR_ONLY" as const, sortOrder: 20,
+      approvalRoute: "MANAGER_ONLY" as const, sortOrder: 20,
     },
     {
       code: "SICK_DOC", nameUk: "Лікарняний з довідкою",
@@ -75,7 +75,7 @@ async function seedLeaveTypes() {
       icon: "bandage", colorHex: "#DC2626", unit: "WORKING_DAYS" as const, payKind: "PAID" as const,
       affectsBalance: true, accrualMode: "ANNUAL" as const, accrualPerMonth: null, annualEntitlement: 5,
       minNoticeDays: 0, allowPastDates: true, requiresDocument: true, isMedical: true,
-      approvalRoute: "HR_ONLY" as const, sortOrder: 30,
+      approvalRoute: "MANAGER_ONLY" as const, sortOrder: 30,
     },
     {
       code: "DAY_OFF", nameUk: "Day Off",

@@ -12,6 +12,94 @@ import type { EmployeeStatus } from "@/generated/prisma/enums";
 export const metadata = { title: "Співробітники — HurmaStr" };
 export const dynamic = "force-dynamic";
 
+type EmployeeListItem = Awaited<ReturnType<typeof listEmployees>>[number];
+
+/** Рядок співробітника у списку. */
+function EmployeeRow({ employee, canManage }: { employee: EmployeeListItem; canManage: boolean }) {
+  const accountDisabled = !!employee.account && !employee.account.isActive;
+  const noAccount = !employee.account;
+
+  return (
+    <li>
+      <Card interactive className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
+        <Avatar firstName={employee.firstName} lastName={employee.lastName} avatarUrl={employee.avatarUrl} />
+
+        <div className="min-w-44 flex-1">
+          <Link
+            href={`/employees/${employee.id}`}
+            className="text-sm font-medium text-ink hover:text-brand"
+          >
+            {employee.lastName} {employee.firstName} {employee.middleName ?? ""}
+          </Link>
+          <p className="mt-0.5 text-xs text-ink-muted">
+            {employee.position?.title ?? ui.notSpecified}
+            {employee.department ? ` · ${employee.department.name}` : ""}
+          </p>
+        </div>
+
+        <div className="min-w-52 text-xs text-ink-muted">
+          {employee.workEmail ? (
+            <p className="flex items-center gap-1.5 truncate">
+              <Mail className="size-3.5 shrink-0" aria-hidden />
+              <a href={`mailto:${employee.workEmail}`} className="truncate hover:text-brand">
+                {employee.workEmail}
+              </a>
+            </p>
+          ) : null}
+          {employee.phone ? (
+            <p className="mt-0.5 flex items-center gap-1.5">
+              <Phone className="size-3.5 shrink-0" aria-hidden />
+              {employee.phone}
+            </p>
+          ) : null}
+          {employee.telegram ? (
+            <p className="mt-0.5 flex items-center gap-1.5">
+              <Send className="size-3.5 shrink-0" aria-hidden />
+              {employee.telegram}
+            </p>
+          ) : null}
+        </div>
+
+        <div className="flex items-center gap-2">
+          {employee.isArchived ? <Badge>Архів</Badge> : null}
+          <Badge tone={employeeStatusTone[employee.status]}>
+            {employeeStatusLabels[employee.status]}
+          </Badge>
+          {canManage && accountDisabled ? <Badge tone="warning">Доступ вимкнено</Badge> : null}
+          {canManage && noAccount ? <Badge>Без доступу</Badge> : null}
+        </div>
+
+        <p className="w-full text-xs text-ink-faint sm:w-auto">
+          з {formatDateUk(employee.hireDate)}
+        </p>
+      </Card>
+    </li>
+  );
+}
+
+/** Групує співробітників по відділах у порядку відділів (без відділу — в кінці). */
+function groupByDepartment(
+  employees: EmployeeListItem[],
+  order: { id: string; name: string }[],
+) {
+  const orderIndex = new Map(order.map((d, i) => [d.id, i]));
+  const groups = new Map<string, { id: string | null; name: string; members: EmployeeListItem[] }>();
+
+  for (const e of employees) {
+    const key = e.department?.id ?? "__none__";
+    if (!groups.has(key)) {
+      groups.set(key, { id: e.department?.id ?? null, name: e.department?.name ?? "Без відділу", members: [] });
+    }
+    groups.get(key)!.members.push(e);
+  }
+
+  return [...groups.values()].sort((a, b) => {
+    const ai = a.id ? (orderIndex.get(a.id) ?? 998) : 1000;
+    const bi = b.id ? (orderIndex.get(b.id) ?? 998) : 1000;
+    return ai - bi;
+  });
+}
+
 export default async function EmployeesPage({
   searchParams,
 }: {
@@ -143,73 +231,23 @@ export default async function EmployeesPage({
           />
         </Card>
       ) : (
-        <ul className="flex flex-col gap-2">
-          {employees.map((employee) => {
-            const accountDisabled = !!employee.account && !employee.account.isActive;
-            const noAccount = !employee.account;
-
-            return (
-              <li key={employee.id}>
-                <Card interactive className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
-                  <Avatar
-                    firstName={employee.firstName}
-                    lastName={employee.lastName}
-                    avatarUrl={employee.avatarUrl}
-                  />
-
-                  <div className="min-w-44 flex-1">
-                    <Link
-                      href={`/employees/${employee.id}`}
-                      className="text-sm font-medium text-ink hover:text-brand"
-                    >
-                      {employee.lastName} {employee.firstName} {employee.middleName ?? ""}
-                    </Link>
-                    <p className="mt-0.5 text-xs text-ink-muted">
-                      {employee.position?.title ?? ui.notSpecified}
-                      {employee.department ? ` · ${employee.department.name}` : ""}
-                    </p>
-                  </div>
-
-                  <div className="min-w-52 text-xs text-ink-muted">
-                    {employee.workEmail ? (
-                      <p className="flex items-center gap-1.5 truncate">
-                        <Mail className="size-3.5 shrink-0" aria-hidden />
-                        <a href={`mailto:${employee.workEmail}`} className="truncate hover:text-brand">
-                          {employee.workEmail}
-                        </a>
-                      </p>
-                    ) : null}
-                    {employee.phone ? (
-                      <p className="mt-0.5 flex items-center gap-1.5">
-                        <Phone className="size-3.5 shrink-0" aria-hidden />
-                        {employee.phone}
-                      </p>
-                    ) : null}
-                    {employee.telegram ? (
-                      <p className="mt-0.5 flex items-center gap-1.5">
-                        <Send className="size-3.5 shrink-0" aria-hidden />
-                        {employee.telegram}
-                      </p>
-                    ) : null}
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    {employee.isArchived ? <Badge>Архів</Badge> : null}
-                    <Badge tone={employeeStatusTone[employee.status]}>
-                      {employeeStatusLabels[employee.status]}
-                    </Badge>
-                    {canManage && accountDisabled ? <Badge tone="warning">Доступ вимкнено</Badge> : null}
-                    {canManage && noAccount ? <Badge>Без доступу</Badge> : null}
-                  </div>
-
-                  <p className="w-full text-xs text-ink-faint sm:w-auto">
-                    з {formatDateUk(employee.hireDate)}
-                  </p>
-                </Card>
-              </li>
-            );
-          })}
-        </ul>
+        <div className="flex flex-col gap-6">
+          {groupByDepartment(employees, departments).map((group) => (
+            <section key={group.id ?? "none"}>
+              <div className="mb-2 flex items-center gap-2 px-1">
+                <h2 className="text-sm font-semibold text-ink">{group.name}</h2>
+                <span className="inline-flex items-center rounded-full bg-surface-muted px-2 py-0.5 text-xs font-medium text-ink-muted">
+                  {group.members.length}
+                </span>
+              </div>
+              <ul className="flex flex-col gap-2">
+                {group.members.map((employee) => (
+                  <EmployeeRow key={employee.id} employee={employee} canManage={canManage} />
+                ))}
+              </ul>
+            </section>
+          ))}
+        </div>
       )}
 
       {employees.length > 0 ? (

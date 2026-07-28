@@ -138,6 +138,8 @@ export async function getLeaveEvents(from: Date, to: Date): Promise<LeaveEvent[]
       status: "APPROVED",
       startDate: { lte: end },
       endDate: { gte: start },
+      // Звільнених у календарі/на панелі не показуємо.
+      employee: { isArchived: false, status: { not: "TERMINATED" } },
     },
     select: {
       startDate: true,

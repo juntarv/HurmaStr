@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Mail, Phone, Plus, Search, Send, UserRound } from "lucide-react";
 import { requireSession } from "@/lib/auth";
-import { canManageEmployees } from "@/lib/permissions";
+import { canManageEmployees, isAdmin } from "@/lib/permissions";
 import { listEmployees } from "@/server/queries/employees";
 import { prisma } from "@/lib/prisma";
 import { Avatar, Badge, Button, Card, EmptyState, Input, Select } from "@/components/ui";
@@ -20,7 +20,9 @@ export default async function EmployeesPage({
   const session = await requireSession();
   const params = await searchParams;
 
-  const includeArchived = params.archived === "1";
+  // Звільнених показуємо лише адміну і лише коли він явно ввімкнув перемикач.
+  const canSeeTerminated = isAdmin(session);
+  const showTerminated = canSeeTerminated && params.archived === "1";
   const status = (params.status || undefined) as EmployeeStatus | undefined;
 
   const [employees, departments] = await Promise.all([
@@ -28,7 +30,7 @@ export default async function EmployeesPage({
       q: params.q,
       departmentId: params.department || undefined,
       status,
-      includeArchived,
+      showTerminated,
     }),
     prisma.department.findMany({
       where: { isArchived: false },
@@ -38,7 +40,7 @@ export default async function EmployeesPage({
   ]);
 
   const canManage = canManageEmployees(session);
-  const hasFilters = Boolean(params.q || params.department || params.status || includeArchived);
+  const hasFilters = Boolean(params.q || params.department || params.status || showTerminated);
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -69,23 +71,28 @@ export default async function EmployeesPage({
 
         <Select name="status" defaultValue={params.status ?? ""} className="w-auto min-w-40">
           <option value="">Усі статуси</option>
-          {(Object.keys(employeeStatusLabels) as EmployeeStatus[]).map((value) => (
-            <option key={value} value={value}>
-              {employeeStatusLabels[value]}
-            </option>
-          ))}
+          {(Object.keys(employeeStatusLabels) as EmployeeStatus[])
+            // «Звільнений» у фільтрі не пропонуємо — звільнених показує окремий перемикач (лише адмін).
+            .filter((value) => value !== "TERMINATED")
+            .map((value) => (
+              <option key={value} value={value}>
+                {employeeStatusLabels[value]}
+              </option>
+            ))}
         </Select>
 
-        <label className="flex items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink-soft">
-          <input
-            type="checkbox"
-            name="archived"
-            value="1"
-            defaultChecked={includeArchived}
-            className="size-4 accent-[var(--color-brand)]"
-          />
-          Архівні
-        </label>
+        {canSeeTerminated ? (
+          <label className="flex items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink-soft">
+            <input
+              type="checkbox"
+              name="archived"
+              value="1"
+              defaultChecked={showTerminated}
+              className="size-4 accent-[var(--color-brand)]"
+            />
+            Показати звільнених
+          </label>
+        ) : null}
 
         <Button type="submit" variant="secondary">
           Знайти

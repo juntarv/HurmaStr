@@ -5,21 +5,28 @@ export type EmployeeFilters = {
   q?: string;
   departmentId?: string;
   status?: EmployeeStatus;
-  /** Показати також архівних і звільнених. */
-  includeArchived?: boolean;
+  /**
+   * Показати звільнених та архівних. Дозволено ЛИШЕ адміністратору —
+   * викликач мусить сам це гарантувати (щоб звільнених не бачив ніхто інший).
+   */
+  showTerminated?: boolean;
 };
 
 /**
  * Список співробітників із пошуком і фільтрами.
  * Пошук іде по searchKey — денормалізованому полю в нижньому регістрі,
  * бо SQLite не вміє insensitive-пошук по кирилиці.
+ *
+ * Звільнених (status TERMINATED) і архівних видно лише коли showTerminated=true;
+ * за замовчуванням список містить тих, хто працює.
  */
 export async function listEmployees(filters: EmployeeFilters = {}) {
   const query = filters.q?.trim().toLowerCase();
 
   return prisma.employee.findMany({
     where: {
-      ...(filters.includeArchived ? {} : { isArchived: false }),
+      // Без явного показу — приховуємо і архівних, і звільнених.
+      ...(filters.showTerminated ? {} : { isArchived: false, status: { not: "TERMINATED" } }),
       ...(filters.departmentId ? { departmentId: filters.departmentId } : {}),
       ...(filters.status ? { status: filters.status } : {}),
       ...(query ? { searchKey: { contains: query } } : {}),

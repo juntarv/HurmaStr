@@ -48,6 +48,8 @@ export default async function EmployeePage({ params }: { params: Promise<{ id: s
 
   const employee = await getEmployeeById(id);
   if (!employee) notFound();
+  // Звільнених бачить лише адміністратор — для решти картка «не існує».
+  if (employee.status === "TERMINATED" && !isAdmin(session)) notFound();
 
   const canManage = canManageEmployees(session);
   const canSeePrivate = canViewSensitive(session, {

@@ -78,29 +78,29 @@ async function main() {
 
   const ceo = await person({ lastName: "CEO", departmentId: MGMT, positionId: pCEO.id, managerId: null });
   const coo = await person({ lastName: "COO", departmentId: MGMT, positionId: pCOO.id, managerId: ceo.id });
-  await person({ lastName: "Асистент COO", departmentId: MGMT, positionId: pAsst.id, managerId: coo.id });
 
-  // --- 4. Артем (картка адміна) → Head of iOS, підпорядкований COO ---
+  // --- 4. Картка адміна → Асистент COO (адмін-доступ у нього) ---
   await prisma.employee.update({
     where: { id: adminEmp },
     data: {
-      lastName: "Шеруда",
-      firstName: "Артем",
-      departmentId: IOS,
-      positionId: pHeadIOS.id,
+      lastName: "Асистент COO",
+      firstName: "",
+      departmentId: MGMT,
+      positionId: pAsst.id,
       managerId: coo.id,
       status: "ACTIVE",
       isArchived: false,
       archivedAt: null,
       terminationDate: null,
-      searchKey: buildSearchKey(["Шеруда", "Артем", admin.email]),
+      searchKey: buildSearchKey(["Асистент COO", admin.email]),
     },
   });
 
-  // --- 5. iOS команда: 2 розробники + 1 дизайнер (керівник — Артем) ---
-  await person({ lastName: "Розробник iOS 1", departmentId: IOS, positionId: pIOSDev.id, managerId: adminEmp });
-  await person({ lastName: "Розробник iOS 2", departmentId: IOS, positionId: pIOSDev.id, managerId: adminEmp });
-  await person({ lastName: "Дизайнер", departmentId: IOS, positionId: pDesigner.id, managerId: adminEmp });
+  // --- 5. iOS: Head — окрема картка Артема (без акаунта) + 2 розробники + дизайнер ---
+  const artem = await person({ lastName: "Шеруда", firstName: "Артем", departmentId: IOS, positionId: pHeadIOS.id, managerId: coo.id });
+  await person({ lastName: "Розробник iOS 1", departmentId: IOS, positionId: pIOSDev.id, managerId: artem.id });
+  await person({ lastName: "Розробник iOS 2", departmentId: IOS, positionId: pIOSDev.id, managerId: artem.id });
+  await person({ lastName: "Дизайнер", departmentId: IOS, positionId: pDesigner.id, managerId: artem.id });
 
   // --- 6. Android команда: 1 тімлід + 4 розробники ---
   const lead = await person({ lastName: "Тімлід Android", departmentId: ANDROID, positionId: pAndLead.id, managerId: coo.id });
@@ -110,7 +110,7 @@ async function main() {
 
   // --- 7. Керівники відділів ---
   await prisma.department.update({ where: { id: MGMT }, data: { headId: ceo.id } });
-  await prisma.department.update({ where: { id: IOS }, data: { headId: adminEmp } });
+  await prisma.department.update({ where: { id: IOS }, data: { headId: artem.id } });
   await prisma.department.update({ where: { id: ANDROID }, data: { headId: lead.id } });
 
   // --- 8. Прибрати посади без співробітників (чистимо демо-сміття) ---

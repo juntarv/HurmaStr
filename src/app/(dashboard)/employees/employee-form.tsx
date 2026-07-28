@@ -146,6 +146,23 @@ export function EmployeeForm({
               defaultValue={dateInputValue(v.probationEndDate)}
             />
           </Field>
+          {/* Тільки при створенні — перенесення залишку з попереднього сервісу. */}
+          {!v.id ? (
+            <Field
+              label="Відпустка вже накопичена (днів)"
+              htmlFor="startingVacationDays"
+              hint="Для міграції: скільки днів у людини вже є. Далі баланс рахується сам"
+            >
+              <Input
+                id="startingVacationDays"
+                name="startingVacationDays"
+                type="number"
+                step="0.5"
+                min="0"
+                placeholder="напр. 15"
+              />
+            </Field>
+          ) : null}
           <Field label="Тип зайнятості" htmlFor="employmentType">
             <Select
               id="employmentType"

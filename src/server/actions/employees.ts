@@ -9,10 +9,12 @@ import { canManageEmployees, isAdmin, isSelf } from "@/lib/permissions";
 import {
   buildSearchKey,
   employeeCoreSchema,
+  formValue,
   readEmployeeForm,
   readSelfContactsForm,
   selfContactsSchema,
 } from "@/server/schemas/employee";
+import { getBalanceForType, round1 } from "@/server/services/balance";
 
 export type ActionResult =
   | { ok: true; message?: string; inviteLink?: string }
@@ -89,6 +91,35 @@ export async function createEmployeeAction(
     });
   } catch {
     return { ok: false, error: "Не вдалося створити картку. Перевірте унікальні поля." };
+  }
+
+  // Міграція: якщо вказано вже накопичену відпустку — виставляємо баланс так,
+  // щоб доступний залишок дорівнював цьому числу (коригуванням).
+  const startVacRaw = formValue(formData, "startingVacationDays");
+  if (startVacRaw != null) {
+    const startVac = Number(startVacRaw);
+    if (!Number.isNaN(startVac) && startVac > 0) {
+      const vac = await prisma.leaveType.findFirst({
+        where: { code: "VACATION", isActive: true },
+        select: { id: true },
+      });
+      if (vac) {
+        const bal = await getBalanceForType(created.id, vac.id);
+        const delta = round1(startVac - bal.available);
+        if (delta !== 0) {
+          await prisma.leaveAdjustment.create({
+            data: {
+              employeeId: created.id,
+              leaveTypeId: vac.id,
+              year: null,
+              days: delta,
+              reason: "Перенесення залишку з попереднього сервісу",
+              createdById: session.employeeId,
+            },
+          });
+        }
+      }
+    }
   }
 
   revalidatePath("/employees");

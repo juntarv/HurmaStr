@@ -4,10 +4,12 @@ import { useActionState, useState } from "react";
 import { Check, SlidersHorizontal, TriangleAlert } from "lucide-react";
 import { adjustBalanceAction, type BalanceAdjustResult } from "@/server/actions/balance";
 import { Button, Field, Input, Select } from "@/components/ui";
+import { cn } from "@/lib/utils";
 
 /**
- * Ручне коригування балансу днів співробітника (HR/адмін).
- * Головний сценарій — перенести залишок з іншого сервісу при міграції.
+ * Ручна зміна балансу днів співробітника (HR/адмін).
+ * «Встановити» — задати точний баланс (міграція з іншого сервісу).
+ * «Додати» — скоригувати на ±днів.
  */
 export function AdjustBalancePanel({
   employeeId,
@@ -21,13 +23,14 @@ export function AdjustBalancePanel({
     null,
   );
   const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState<"set" | "add">("set");
 
   if (!open) {
     return (
       <div className="px-5 pb-5">
         <Button type="button" variant="secondary" size="sm" onClick={() => setOpen(true)}>
           <SlidersHorizontal className="size-4" aria-hidden />
-          Коригувати баланс
+          Змінити баланс днів
         </Button>
       </div>
     );
@@ -36,12 +39,35 @@ export function AdjustBalancePanel({
   return (
     <form action={formAction} className="flex flex-col gap-3 border-t border-line bg-surface-muted px-5 py-4">
       <input type="hidden" name="employeeId" value={employeeId} />
+      <input type="hidden" name="mode" value={mode} />
+
+      {/* Перемикач режиму */}
+      <div className="inline-flex w-fit rounded-lg border border-line bg-surface p-0.5 text-sm">
+        {(["set", "add"] as const).map((m) => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => setMode(m)}
+            className={cn(
+              "rounded-md px-3 py-1 font-medium transition-colors",
+              mode === m ? "bg-brand text-white" : "text-ink-soft hover:text-ink",
+            )}
+          >
+            {m === "set" ? "Встановити" : "Додати ±"}
+          </button>
+        ))}
+      </div>
+
       <p className="text-xs text-ink-muted">
-        Введіть ± днів. Напр. перенесення з іншого сервісу: <b>+15</b>. Відпустка додається
-        до нарахованого назавжди; лікарняні — до поточного року.
+        {mode === "set" ? (
+          <>Задайте точний баланс — напр. перенесення з попереднього сервісу: <b>15</b>. Система сама порахує коригування.</>
+        ) : (
+          <>Скоригуйте на ± днів, напр. <b>+3</b> або <b>−2</b>.</>
+        )}{" "}
+        Відпустка — безстроково; лікарняні — на поточний рік.
       </p>
 
-      <div className="grid gap-3 sm:grid-cols-[1fr_100px]">
+      <div className="grid gap-3 sm:grid-cols-[1fr_120px]">
         <Field label="Тип" htmlFor="adj-type">
           <Select id="adj-type" name="leaveTypeId" defaultValue={types[0]?.id ?? ""}>
             {types.map((t) => (
@@ -49,8 +75,16 @@ export function AdjustBalancePanel({
             ))}
           </Select>
         </Field>
-        <Field label="± днів" htmlFor="adj-days">
-          <Input id="adj-days" name="days" type="number" step="0.5" placeholder="+15" required />
+        <Field label={mode === "set" ? "Баланс, днів" : "± днів"} htmlFor="adj-value">
+          <Input
+            id="adj-value"
+            name="value"
+            type="number"
+            step="0.5"
+            min={mode === "set" ? "0" : undefined}
+            placeholder={mode === "set" ? "15" : "+3"}
+            required
+          />
         </Field>
       </div>
 

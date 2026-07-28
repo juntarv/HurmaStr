@@ -26,7 +26,11 @@ ENV AUTH_SECRET="build-time-placeholder"
 ENV NEXT_TELEMETRY_DISABLED=1
 
 COPY package.json package-lock.json ./
-RUN npm ci
+# npm ci вимагає ідеального збігу лок-файлу з платформою. Лок, згенерований на
+# Windows, не містить linux-only опційних бінарників (напр. @tailwindcss/oxide
+# та @emnapi для wasm-фолбеку), тож на linux-білдері падає. Фолбек на npm install
+# дотягує потрібні під платформу залежності.
+RUN npm ci --no-audit --no-fund || npm install --no-audit --no-fund
 
 COPY . .
 RUN npx prisma generate

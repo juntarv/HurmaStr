@@ -8,7 +8,12 @@ import path from "node:path";
  * /api/leave-attachments/[id] з перевіркою прав.
  */
 
-const STORAGE_DIR = path.join(process.cwd(), "storage", "leave-attachments");
+// Базовий каталог сховища можна винести на постійний том через STORAGE_DIR
+// (напр. на Fly.io — /data/storage). За замовчуванням — ./storage у проєкті.
+const STORAGE_ROOT = process.env.STORAGE_DIR
+  ? path.resolve(process.env.STORAGE_DIR)
+  : path.join(process.cwd(), "storage");
+const STORAGE_DIR = path.join(STORAGE_ROOT, "leave-attachments");
 
 const ALLOWED_MIME = new Set([
   "image/jpeg",

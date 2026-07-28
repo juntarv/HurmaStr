@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Boxes, Package, Search, Wrench } from "lucide-react";
 import { requireSession } from "@/lib/auth";
-import { isHrOrAdmin } from "@/lib/permissions";
+import { isAdmin } from "@/lib/permissions";
 import {
   getAssetStats,
   getAssignableEmployees,
@@ -41,7 +41,7 @@ export default async function AssetsPage({
   searchParams: Promise<{ q?: string; category?: string; status?: string }>;
 }) {
   const session = await requireSession();
-  if (!isHrOrAdmin(session)) return forbidden("Розділ «Майно» доступний HR та адміністраторам.");
+  if (!isAdmin(session)) return forbidden("Розділ «Майно» доступний лише адміністратору.");
 
   const params = await searchParams;
   const category = (params.category || undefined) as AssetCategory | undefined;

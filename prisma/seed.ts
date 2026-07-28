@@ -58,7 +58,7 @@ async function seedLeaveTypes() {
       description: "Основна оплачувана відпустка. Нараховується 2 дні за кожен місяць роботи.",
       icon: "palm", colorHex: "#16A34A", unit: "WORKING_DAYS" as const, payKind: "PAID" as const,
       affectsBalance: true, accrualMode: "MONTHLY" as const, accrualPerMonth: 2, annualEntitlement: null,
-      minNoticeDays: 7, allowPastDates: false, requiresDocument: false, isMedical: false,
+      minNoticeDays: 0, allowPastDates: false, requiresDocument: false, isMedical: false,
       approvalRoute: "MANAGER_THEN_HR" as const, sortOrder: 10,
     },
     {

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Cake, Mail, MapPin, Package, Pencil, Phone, Send, Users } from "lucide-react";
 import { requireSession } from "@/lib/auth";
-import { canManageEmployees, canViewPayroll, canViewSensitive } from "@/lib/permissions";
+import { canManageEmployees, canViewPayroll, canViewSensitive, isAdmin } from "@/lib/permissions";
 import { getEmployeeById } from "@/server/queries/employees";
 import { getEmployeeBalances } from "@/server/services/balance";
 import { getAssetsForEmployee } from "@/server/queries/assets";
@@ -283,15 +283,14 @@ export default async function EmployeePage({ params }: { params: Promise<{ id: s
         </Card>
 
         {/* ------------------------------- Майно ----------------------------- */}
+        {isAdmin(session) ? (
         <Card>
           <CardHeader
             title={`Майно — ${assets.length}`}
             action={
-              canManage ? (
-                <Link href="/assets" className="text-xs text-brand hover:underline">
-                  Керувати
-                </Link>
-              ) : null
+              <Link href="/assets" className="text-xs text-brand hover:underline">
+                Керувати
+              </Link>
             }
           />
           <Divider />
@@ -323,6 +322,7 @@ export default async function EmployeePage({ params }: { params: Promise<{ id: s
             </ul>
           )}
         </Card>
+        ) : null}
 
         {/* ----------------------------- Підлеглі ---------------------------- */}
         <Card>

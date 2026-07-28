@@ -4,7 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth";
-import { isHrOrAdmin } from "@/lib/permissions";
+import { isAdmin } from "@/lib/permissions";
 
 export type AssetResult = { ok: true; message?: string } | { ok: false; error: string };
 
@@ -54,7 +54,7 @@ export async function createAssetAction(
   formData: FormData,
 ): Promise<AssetResult> {
   const session = await requireSession();
-  if (!isHrOrAdmin(session)) return { ok: false, error: "Недостатньо прав" };
+  if (!isAdmin(session)) return { ok: false, error: "Недостатньо прав" };
 
   const parsed = assetSchema.safeParse(read(formData));
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
@@ -78,7 +78,7 @@ export async function assignAssetAction(
   formData: FormData,
 ): Promise<AssetResult> {
   const session = await requireSession();
-  if (!isHrOrAdmin(session)) return { ok: false, error: "Недостатньо прав" };
+  if (!isAdmin(session)) return { ok: false, error: "Недостатньо прав" };
 
   const assetId = String(formData.get("assetId") ?? "");
   const employeeId = String(formData.get("employeeId") ?? "").trim() || null;
@@ -120,7 +120,7 @@ export async function setAssetStatusAction(
   formData: FormData,
 ): Promise<AssetResult> {
   const session = await requireSession();
-  if (!isHrOrAdmin(session)) return { ok: false, error: "Недостатньо прав" };
+  if (!isAdmin(session)) return { ok: false, error: "Недостатньо прав" };
 
   const assetId = String(formData.get("assetId") ?? "");
   const status = String(formData.get("status") ?? "");

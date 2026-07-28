@@ -125,8 +125,15 @@ export async function getDepartmentOrgMap() {
       orderBy: { sortOrder: "asc" },
     }),
     prisma.employee.count({ where: { isArchived: false, status: { not: "TERMINATED" } } }),
+    // Керівництво у верхньому вузлі — це співробітники відділу «Менеджмент»
+    // (CEO/COO), а не всі, у кого немає керівника (інакше туди потрапляють
+    // системний адмін без відділу та тімліди без призначеного керівника).
     prisma.employee.findMany({
-      where: { isArchived: false, status: { not: "TERMINATED" }, managerId: null },
+      where: {
+        isArchived: false,
+        status: { not: "TERMINATED" },
+        department: { name: "Менеджмент" },
+      },
       select: {
         id: true,
         firstName: true,
@@ -136,7 +143,7 @@ export async function getDepartmentOrgMap() {
         department: { select: { name: true } },
         _count: { select: { subordinates: true } },
       },
-      orderBy: [{ lastName: "asc" }],
+      orderBy: [{ position: { sortOrder: "asc" } }, { lastName: "asc" }],
     }),
   ]);
 

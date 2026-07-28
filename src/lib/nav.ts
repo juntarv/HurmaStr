@@ -25,8 +25,9 @@ export const navigation: NavGroup[] = [
     items: [
       { href: "/employees", label: "Співробітники", icon: "Users" },
       { href: "/departments", label: "Відділи", icon: "Building2" },
+      { href: "/positions", label: "Посади", icon: "BriefcaseBusiness", roles: ["ADMIN", "HR"] },
       { href: "/org", label: "Оргструктура", icon: "Network" },
-      { href: "/assets", label: "Майно", icon: "Boxes", roles: ["ADMIN", "HR"] },
+      { href: "/assets", label: "Майно", icon: "Boxes", roles: ["ADMIN"] },
     ],
   },
   {

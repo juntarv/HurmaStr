@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Boxes,
+  BriefcaseBusiness,
   Building2,
   Calendar,
   CalendarDays,
@@ -30,6 +31,7 @@ const icons: Record<string, LucideIcon> = {
   Check,
   Palmtree,
   Boxes,
+  BriefcaseBusiness,
 };
 
 export function SidebarNav({

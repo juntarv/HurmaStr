@@ -208,25 +208,39 @@ describe("validateSubmission", () => {
 // ========================= buildApprovalRoute ================================
 
 describe("buildApprovalRoute", () => {
-  it("MANAGER_THEN_HR з managerId і доступним HR → 2 кроки (MANAGER, HR)", async () => {
+  it("MANAGER_THEN_HR з керівником і доступним HR → 2 кроки (MANAGER, HR), крок MANAGER рольовий", async () => {
     vi.spyOn(prisma.user, "count").mockResolvedValue(2);
     const res = await buildApprovalRoute({
       employeeId: "emp-1",
-      managerId: "mgr-1",
+      managerIds: ["mgr-1"],
       departmentHeadId: null,
       route: "MANAGER_THEN_HR",
     });
     expect(res.autoApprove).toBe(false);
     expect(res.steps).toHaveLength(2);
-    expect(res.steps[0]).toMatchObject({ step: 1, role: "MANAGER", approverId: "mgr-1" });
+    // Крок менеджера — рольовий: погоджує будь-хто з керівників (approverId=null).
+    expect(res.steps[0]).toMatchObject({ step: 1, role: "MANAGER", approverId: null });
     expect(res.steps[1]).toMatchObject({ step: 2, role: "HR", approverId: null });
   });
 
-  it("MANAGER_ONLY без managerId → autoApprove=true", async () => {
+  it("кілька керівників → все одно один рольовий крок MANAGER", async () => {
+    vi.spyOn(prisma.user, "count").mockResolvedValue(0);
+    const res = await buildApprovalRoute({
+      employeeId: "emp-1",
+      managerIds: ["mgr-1", "mgr-2", "mgr-3"],
+      departmentHeadId: null,
+      route: "MANAGER_ONLY",
+    });
+    expect(res.autoApprove).toBe(false);
+    expect(res.steps).toHaveLength(1);
+    expect(res.steps[0]).toMatchObject({ step: 1, role: "MANAGER", approverId: null });
+  });
+
+  it("MANAGER_ONLY без керівників → autoApprove=true", async () => {
     const countSpy = vi.spyOn(prisma.user, "count").mockResolvedValue(5);
     const res = await buildApprovalRoute({
       employeeId: "emp-1",
-      managerId: null,
+      managerIds: [],
       departmentHeadId: null,
       route: "MANAGER_ONLY",
     });
@@ -236,11 +250,11 @@ describe("buildApprovalRoute", () => {
     expect(countSpy).not.toHaveBeenCalled();
   });
 
-  it("managerId === employeeId → крок менеджера пропускається", async () => {
+  it("керівник === сам заявник → крок менеджера пропускається", async () => {
     vi.spyOn(prisma.user, "count").mockResolvedValue(3);
     const res = await buildApprovalRoute({
       employeeId: "emp-1",
-      managerId: "emp-1", // сам собі керівник
+      managerIds: ["emp-1"], // сам собі керівник
       departmentHeadId: null,
       route: "MANAGER_THEN_HR",
     });
@@ -250,17 +264,18 @@ describe("buildApprovalRoute", () => {
     expect(res.steps.some((s) => s.role === "MANAGER")).toBe(false);
   });
 
-  it("departmentHeadId як запасний, коли managerId=null", async () => {
+  it("departmentHeadId як запасний, коли керівників немає", async () => {
     const countSpy = vi.spyOn(prisma.user, "count").mockResolvedValue(0);
     const res = await buildApprovalRoute({
       employeeId: "emp-1",
-      managerId: null,
+      managerIds: [],
       departmentHeadId: "head-1",
       route: "MANAGER_ONLY",
     });
     expect(res.autoApprove).toBe(false);
     expect(res.steps).toHaveLength(1);
-    expect(res.steps[0]).toMatchObject({ step: 1, role: "MANAGER", approverId: "head-1" });
+    // Рольовий крок: підхопить керівника відділу серед погоджувачів.
+    expect(res.steps[0]).toMatchObject({ step: 1, role: "MANAGER", approverId: null });
     expect(countSpy).not.toHaveBeenCalled();
   });
 
@@ -268,7 +283,7 @@ describe("buildApprovalRoute", () => {
     vi.spyOn(prisma.user, "count").mockResolvedValue(0);
     const res = await buildApprovalRoute({
       employeeId: "emp-1",
-      managerId: null,
+      managerIds: [],
       departmentHeadId: null,
       route: "HR_ONLY",
     });

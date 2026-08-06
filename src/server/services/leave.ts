@@ -43,21 +43,25 @@ export type RouteResult = {
  */
 export async function buildApprovalRoute(params: {
   employeeId: string;
-  managerId: string | null;
+  /** Усі керівники (основний + додаткові). Погодити може будь-хто з них. */
+  managerIds: string[];
   departmentHeadId: string | null;
   route: "MANAGER_THEN_HR" | "MANAGER_ONLY" | "HR_ONLY";
 }): Promise<RouteResult> {
-  const { employeeId, managerId, departmentHeadId, route } = params;
+  const { employeeId, managerIds, departmentHeadId, route } = params;
 
-  let managerApproverId: string | null = managerId ?? departmentHeadId ?? null;
-  if (managerApproverId === employeeId) managerApproverId = null;
+  // Погоджувачі-керівники: явні керівники, інакше — керівник відділу. Себе не рахуємо.
+  const managers = [...new Set(managerIds.filter((m) => m && m !== employeeId))];
+  const hasManagerApprover =
+    managers.length > 0 || (!!departmentHeadId && departmentHeadId !== employeeId);
 
   const wantsManager = route === "MANAGER_THEN_HR" || route === "MANAGER_ONLY";
   const wantsHr = route === "MANAGER_THEN_HR" || route === "HR_ONLY";
 
   const steps: RouteStep[] = [];
-  if (wantsManager && managerApproverId) {
-    steps.push({ step: steps.length + 1, role: "MANAGER", approverId: managerApproverId });
+  // Крок керівника — рольовий: погоджує будь-хто з керівників заявника.
+  if (wantsManager && hasManagerApprover) {
+    steps.push({ step: steps.length + 1, role: "MANAGER", approverId: null });
   }
 
   if (wantsHr) {
@@ -73,7 +77,7 @@ export async function buildApprovalRoute(params: {
     return {
       steps: [],
       autoApprove: true,
-      autoApproveReason: managerApproverId
+      autoApproveReason: hasManagerApprover
         ? "Немає доступного погоджувача HR"
         : "У співробітника не призначено керівника, а вільного HR-погоджувача немає",
     };

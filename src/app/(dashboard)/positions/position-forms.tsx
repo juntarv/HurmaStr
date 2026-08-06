@@ -38,6 +38,10 @@ export function CreatePositionForm({ departments }: { departments: Dept[] }) {
           {pending ? "…" : "Додати"}
         </Button>
       </div>
+      <label className="sm:col-span-3 flex items-center gap-2 text-sm text-ink-soft">
+        <input type="checkbox" name="isManagerial" className="size-4 accent-[var(--color-brand)]" />
+        Керівна посада (може бути керівником — вище керівництво, хеди, тімліди)
+      </label>
 
       {state && !state.ok ? (
         <p role="alert" className="sm:col-span-3 flex items-center gap-2 rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger">
@@ -58,7 +62,7 @@ export function PositionRow({
   position,
   departments,
 }: {
-  position: { id: string; title: string; departmentId: string | null; sortOrder: number; isArchived: boolean; count: number };
+  position: { id: string; title: string; departmentId: string | null; sortOrder: number; isArchived: boolean; isManagerial: boolean; count: number };
   departments: Dept[];
 }) {
   const [state, formAction, pending] = useActionState<PositionResult | null, FormData>(
@@ -83,9 +87,14 @@ export function PositionRow({
     return (
       <div className="flex flex-wrap items-center gap-3 px-4 py-3">
         <div className="min-w-44 flex-1">
-          <p className="text-sm font-medium text-ink">
+          <p className="flex items-center gap-2 text-sm font-medium text-ink">
             {position.title}
-            {position.isArchived ? <span className="ml-2 text-xs text-ink-faint">(архів)</span> : null}
+            {position.isManagerial ? (
+              <span className="rounded-full bg-brand-soft px-1.5 py-0.5 text-[10px] font-medium text-brand">
+                керівна
+              </span>
+            ) : null}
+            {position.isArchived ? <span className="text-xs text-ink-faint">(архів)</span> : null}
           </p>
           <p className="mt-0.5 text-xs text-ink-muted">
             {departments.find((d) => d.id === position.departmentId)?.name ?? "Без відділу"}
@@ -133,6 +142,15 @@ export function PositionRow({
           Скасувати
         </Button>
       </div>
+      <label className="sm:col-span-3 flex items-center gap-2 text-sm text-ink-soft">
+        <input
+          type="checkbox"
+          name="isManagerial"
+          defaultChecked={position.isManagerial}
+          className="size-4 accent-[var(--color-brand)]"
+        />
+        Керівна посада (може бути керівником)
+      </label>
       {state && !state.ok ? (
         <p role="alert" className="sm:col-span-3 text-sm text-danger">{state.error}</p>
       ) : null}

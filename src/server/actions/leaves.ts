@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth";
-import { canDecideApproval, isHrOrAdmin, isSelf } from "@/lib/permissions";
+import { canDecideApproval, isHrOrAdmin, isSelf, managerSet } from "@/lib/permissions";
 import { rangesOverlap, toDateOnly } from "@/lib/dates";
 import {
   buildApprovalRoute,
@@ -66,7 +66,12 @@ export async function createLeaveRequestAction(
 
   const employee = await prisma.employee.findUniqueOrThrow({
     where: { id: session.employeeId },
-    select: { id: true, managerId: true, department: { select: { headId: true } } },
+    select: {
+      id: true,
+      managerId: true,
+      coManagers: { select: { id: true } },
+      department: { select: { headId: true } },
+    },
   });
 
   const days = calcLeaveDays(type, startDate, endDate);
@@ -121,7 +126,7 @@ export async function createLeaveRequestAction(
 
   const route = await buildApprovalRoute({
     employeeId: employee.id,
-    managerId: employee.managerId,
+    managerIds: managerSet(employee),
     departmentHeadId: employee.department?.headId ?? null,
     route: type.approvalRoute,
   });
@@ -182,7 +187,21 @@ export async function decideApprovalAction(
   const approval = await prisma.leaveApproval.findUnique({
     where: { id: approvalId },
     include: {
-      request: { select: { id: true, employeeId: true, status: true, currentStep: true } },
+      request: {
+        select: {
+          id: true,
+          employeeId: true,
+          status: true,
+          currentStep: true,
+          employee: {
+            select: {
+              managerId: true,
+              coManagers: { select: { id: true } },
+              department: { select: { headId: true } },
+            },
+          },
+        },
+      },
     },
   });
   if (!approval) return { ok: false, error: "Крок погодження не знайдено" };
@@ -194,7 +213,15 @@ export async function decideApprovalAction(
   if (approval.step !== request.currentStep) {
     return { ok: false, error: "Зараз черга іншого погоджувача" };
   }
-  if (!canDecideApproval(session, { role: approval.role, approverId: approval.approverId }, request)) {
+
+  // Керівник заявника (основний + додаткові + керівник відділу).
+  const managers = managerSet(request.employee);
+  const headId = request.employee.department?.headId;
+  const isManager =
+    !!session.employeeId &&
+    (managers.includes(session.employeeId) || headId === session.employeeId);
+
+  if (!canDecideApproval(session, { role: approval.role }, { employeeId: request.employeeId, isManager })) {
     return { ok: false, error: "У вас немає права погоджувати цю заявку" };
   }
 

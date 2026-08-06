@@ -38,6 +38,7 @@ export const employeeCoreSchema = z.object({
   personalEmail: optionalEmail,
   phone: optionalPhone,
   telegram: z.string().max(60).nullable(),
+  mattermost: z.string().max(60).nullable(),
   city: z.string().max(80).nullable(),
 
   gender: z.enum(["MALE", "FEMALE", "UNSPECIFIED"]),
@@ -51,16 +52,19 @@ export const employeeCoreSchema = z.object({
 
   positionId: z.string().nullable(),
   departmentId: z.string().nullable(),
-  managerId: z.string().nullable(),
 
   emergencyContactName: z.string().max(120).nullable(),
   emergencyContactPhone: optionalPhone,
 
-  // Виплати
+  // Виплати (з можливістю розподілу на два способи)
+  payoutTotal: z.coerce.number().min(0, "Сума не може бути від'ємною").nullable(),
+  payoutCurrency: z.string().max(10).nullable(),
   paymentType: z.enum(["CRYPTO", "CASH", "FOP"]).nullable(),
   payoutAmount: z.coerce.number().min(0, "Сума не може бути від'ємною").nullable(),
-  payoutCurrency: z.string().max(10).nullable(),
   walletAddress: z.string().max(200).nullable(),
+  paymentType2: z.enum(["CRYPTO", "CASH", "FOP"]).nullable(),
+  payoutAmount2: z.coerce.number().min(0, "Сума не може бути від'ємною").nullable(),
+  walletAddress2: z.string().max(200).nullable(),
 
   note: z.string().max(2000).nullable(),
 });
@@ -72,6 +76,7 @@ export const selfContactsSchema = z.object({
   personalEmail: optionalEmail,
   phone: optionalPhone,
   telegram: z.string().max(60).nullable(),
+  mattermost: z.string().max(60).nullable(),
   city: z.string().max(80).nullable(),
   emergencyContactName: z.string().max(120).nullable(),
   emergencyContactPhone: optionalPhone,
@@ -87,6 +92,7 @@ export function readEmployeeForm(formData: FormData) {
     personalEmail: formValue(formData, "personalEmail"),
     phone: formValue(formData, "phone"),
     telegram: formValue(formData, "telegram"),
+    mattermost: formValue(formData, "mattermost"),
     city: formValue(formData, "city"),
     gender: formValue(formData, "gender") ?? "UNSPECIFIED",
     birthDate: formValue(formData, "birthDate"),
@@ -96,15 +102,26 @@ export function readEmployeeForm(formData: FormData) {
     employmentType: formValue(formData, "employmentType") ?? "FULL_TIME",
     positionId: formValue(formData, "positionId"),
     departmentId: formValue(formData, "departmentId"),
-    managerId: formValue(formData, "managerId"),
     emergencyContactName: formValue(formData, "emergencyContactName"),
     emergencyContactPhone: formValue(formData, "emergencyContactPhone"),
+    payoutTotal: formValue(formData, "payoutTotal"),
+    payoutCurrency: formValue(formData, "payoutCurrency"),
     paymentType: formValue(formData, "paymentType"),
     payoutAmount: formValue(formData, "payoutAmount"),
-    payoutCurrency: formValue(formData, "payoutCurrency"),
     walletAddress: formValue(formData, "walletAddress"),
+    paymentType2: formValue(formData, "paymentType2"),
+    payoutAmount2: formValue(formData, "payoutAmount2"),
+    walletAddress2: formValue(formData, "walletAddress2"),
     note: formValue(formData, "note"),
   };
+}
+
+/** Керівники з форми (масив id) — перший стає основним, решта — додаткові. */
+export function readManagerIds(formData: FormData): string[] {
+  return formData
+    .getAll("managerIds")
+    .map((v) => String(v).trim())
+    .filter((v) => v !== "");
 }
 
 export function readSelfContactsForm(formData: FormData) {
@@ -112,6 +129,7 @@ export function readSelfContactsForm(formData: FormData) {
     personalEmail: formValue(formData, "personalEmail"),
     phone: formValue(formData, "phone"),
     telegram: formValue(formData, "telegram"),
+    mattermost: formValue(formData, "mattermost"),
     city: formValue(formData, "city"),
     emergencyContactName: formValue(formData, "emergencyContactName"),
     emergencyContactPhone: formValue(formData, "emergencyContactPhone"),

@@ -21,6 +21,7 @@ export default async function PositionsPage() {
         departmentId: true,
         sortOrder: true,
         isArchived: true,
+        isManagerial: true,
         _count: { select: { employees: true } },
       },
       orderBy: [{ isArchived: "asc" }, { sortOrder: "asc" }, { title: "asc" }],
@@ -58,6 +59,7 @@ export default async function PositionsPage() {
                     departmentId: p.departmentId,
                     sortOrder: p.sortOrder,
                     isArchived: p.isArchived,
+                    isManagerial: p.isManagerial,
                     count: p._count.employees,
                   }}
                   departments={departments}

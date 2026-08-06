@@ -49,33 +49,50 @@ export function isSelf(session: Session, employeeId: string | null | undefined):
   return !!session.employeeId && !!employeeId && session.employeeId === employeeId;
 }
 
+/** Чи є користувач одним із керівників (основний + додаткові). */
+export function isManagerOf(session: Session, managerIds: (string | null | undefined)[]): boolean {
+  return !!session.employeeId && managerIds.some((id) => id === session.employeeId);
+}
+
+/** Усі керівники співробітника: основний + додаткові (co-managers). */
+export function managerSet(e: {
+  managerId?: string | null;
+  coManagers?: { id: string }[];
+}): string[] {
+  const s = new Set<string>();
+  if (e.managerId) s.add(e.managerId);
+  for (const m of e.coManagers ?? []) if (m.id) s.add(m.id);
+  return [...s];
+}
+
 /**
  * Чутливі поля картки: особиста пошта, контакт для екстрених випадків,
- * табельний номер, службова нотатка, причина звільнення.
+ * службова нотатка, причина звільнення.
  * Решта довідника (ПІБ, посада, відділ, робочі контакти) відкрита всім своїм.
  */
 export function canViewSensitive(
   session: Session,
-  employee: { id: string; managerId?: string | null },
+  employee: { id: string; managerIds?: (string | null | undefined)[] },
 ): boolean {
   return (
     isHrOrAdmin(session) ||
     isSelf(session, employee.id) ||
-    (!!session.employeeId && employee.managerId === session.employeeId)
+    isManagerOf(session, employee.managerIds ?? [])
   );
 }
 
 /**
  * Рішення по кроку погодження.
  * Заборонено погоджувати власну заявку — навіть адміністратору.
+ * isManager — чи є користувач одним із керівників заявника.
  */
 export function canDecideApproval(
   session: Session,
-  step: { role: "MANAGER" | "HR"; approverId: string | null },
-  request: { employeeId: string },
+  step: { role: "MANAGER" | "HR" },
+  request: { employeeId: string; isManager?: boolean },
 ): boolean {
   if (isSelf(session, request.employeeId)) return false;
-  if (step.approverId && session.employeeId === step.approverId) return true;
+  if (step.role === "MANAGER" && request.isManager) return true;
   if (step.role === "HR" && isHrOrAdmin(session)) return true;
   // Адміністратор — запасний погоджувач, якщо призначений керівник недоступний.
   return isAdmin(session);
@@ -84,17 +101,17 @@ export function canDecideApproval(
 /**
  * Чи видно деталі відсутності (тип, коментар) у спільному календарі.
  * Медичні типи ховаємо від усіх, крім самого співробітника,
- * його керівника і HR — стороннім показуємо просто «Відсутній».
+ * його керівників і HR — стороннім показуємо просто «Відсутній».
  */
 export function canSeeLeaveDetails(
   session: Session,
-  leave: { employeeId: string; employeeManagerId?: string | null },
+  leave: { employeeId: string; managerIds?: (string | null | undefined)[] },
   isMedical: boolean,
 ): boolean {
   if (!isMedical) return true;
   return (
     isHrOrAdmin(session) ||
     isSelf(session, leave.employeeId) ||
-    (!!session.employeeId && leave.employeeManagerId === session.employeeId)
+    isManagerOf(session, leave.managerIds ?? [])
   );
 }

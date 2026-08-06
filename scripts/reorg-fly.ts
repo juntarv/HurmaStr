@@ -39,19 +39,23 @@ async function main() {
   await prisma.employee.deleteMany({ where: { id: { in: others } } });
   console.log(`✓ Видалено співробітників: ${others.length}, усе майно`);
 
-  // --- 2. Посади (find-or-create) ---
-  async function pos(title: string, departmentId: string) {
+  // --- 2. Посади (find-or-create). isManagerial = може бути керівником
+  //        (вище керівництво, хеди, тімліди). Прості посади — ні. ---
+  async function pos(title: string, departmentId: string, isManagerial = false) {
     const ex = await prisma.position.findFirst({ where: { title, departmentId } });
-    return ex ?? (await prisma.position.create({ data: { title, departmentId } }));
+    if (ex) {
+      return prisma.position.update({ where: { id: ex.id }, data: { isManagerial } });
+    }
+    return prisma.position.create({ data: { title, departmentId, isManagerial } });
   }
-  const pCEO = await pos("CEO", MGMT);
-  const pCOO = await pos("COO", MGMT);
-  const pAsst = await pos("Асистент COO", MGMT);
-  const pHeadIOS = await pos("Head of iOS", IOS);
-  const pIOSDev = await pos("iOS Developer", IOS);
-  const pDesigner = await pos("Designer", IOS);
-  const pAndLead = await pos("Android Team Lead", ANDROID);
-  const pAndDev = await pos("Android Developer", ANDROID);
+  const pCEO = await pos("CEO", MGMT, true);
+  const pCOO = await pos("COO", MGMT, true);
+  const pAsst = await pos("Асистент COO", MGMT, true);
+  const pHeadIOS = await pos("Head of iOS", IOS, true);
+  const pIOSDev = await pos("iOS Developer", IOS, false);
+  const pDesigner = await pos("Designer", IOS, false);
+  const pAndLead = await pos("Android Team Lead", ANDROID, true);
+  const pAndDev = await pos("Android Developer", ANDROID, false);
 
   // --- 3. Керівництво (без імен, без акаунтів) ---
   async function person(data: {

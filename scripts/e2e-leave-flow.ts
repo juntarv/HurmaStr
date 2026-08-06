@@ -63,13 +63,14 @@ async function main() {
 
   // --- 2. Маршрут погодження -------------------------------------------------
   const route = await buildApprovalRoute({
-    employeeId: worker.id, managerId: manager.id, departmentHeadId: null, route: "MANAGER_THEN_HR",
+    employeeId: worker.id, managerIds: [manager.id], departmentHeadId: null, route: "MANAGER_THEN_HR",
   });
   check("маршрут: керівник + HR = 2 кроки", route.steps.length, 2);
-  check("перший крок — керівник", route.steps[0].approverId, manager.id);
+  // Крок керівника рольовий: погоджує будь-хто з керівників (approverId=null).
+  check("перший крок — керівник", route.steps[0].role, "MANAGER");
 
   const routeNoOne = await buildApprovalRoute({
-    employeeId: worker.id, managerId: null, departmentHeadId: null, route: "MANAGER_ONLY",
+    employeeId: worker.id, managerIds: [], departmentHeadId: null, route: "MANAGER_ONLY",
   });
   check("без керівника — автопогодження (не зависає)", routeNoOne.autoApprove, true);
 

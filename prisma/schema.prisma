@@ -181,6 +181,8 @@ model Position {
   id         String  @id @default(cuid())
   title      String
   isArchived Boolean @default(false)
+  /// Керівна посада (CEO/COO/Head/Lead) — лише такі можна призначати керівниками.
+  isManagerial Boolean @default(false)
   sortOrder  Int     @default(0)
 
   departmentId String?
@@ -206,23 +208,31 @@ model Employee {
   searchKey String @default("")
 
   avatarUrl String?
-  gender    Gender  @default(UNSPECIFIED)
+  /// Ім'я завантаженого файлу фото на диску (storage/avatars). Порожній — без фото.
+  avatarFile String?
+  gender     Gender  @default(UNSPECIFIED)
 
   /// Опційний: логін живе в User.email. На неї надсилається запрошення.
   workEmail     String? @unique
   personalEmail String?
   phone         String?
   telegram      String?
+  mattermost    String? // нік у MatterMost
   city          String?
 
   emergencyContactName  String?
   emergencyContactPhone String?
 
   // Виплати (чутливі дані — доступні HR/адміну та самому співробітнику).
-  paymentType    PaymentType?
-  payoutAmount   Float?
-  payoutCurrency String? // USDT, USD, UAH, EUR…
-  walletAddress  String? // крипто-гаманець або реквізити
+  // Можна розподілити на два способи (напр. крипто + ФОП).
+  payoutTotal    Float?       // загальна ставка
+  payoutCurrency String?      // USDT, USD, UAH, EUR…
+  paymentType    PaymentType? // спосіб №1
+  payoutAmount   Float?       // сума за способом №1
+  walletAddress  String?      // гаманець/реквізити №1
+  paymentType2   PaymentType? // спосіб №2 (опційно)
+  payoutAmount2  Float?       // сума за способом №2
+  walletAddress2 String?      // гаманець/реквізити №2
 
   birthDate DateTime?
 
@@ -244,9 +254,15 @@ model Employee {
   departmentId String?
   department   Department? @relation("EmployeeDepartment", fields: [departmentId], references: [id], onDelete: SetNull)
 
+  // Основний керівник (для оргдерева й циклів).
   managerId    String?
   manager      Employee?  @relation("EmployeeHierarchy", fields: [managerId], references: [id], onDelete: SetNull)
   subordinates Employee[] @relation("EmployeeHierarchy")
+
+  // Додаткові керівники: усі керівники = основний + ці. Будь-хто з них
+  // погоджує заявки й бачить чутливі дані підлеглого.
+  coManagers Employee[] @relation("CoManagers")
+  coManaging Employee[] @relation("CoManagers")
 
   account           User?        @relation("EmployeeAccount")
   headedDepartments Department[] @relation("DepartmentHead")

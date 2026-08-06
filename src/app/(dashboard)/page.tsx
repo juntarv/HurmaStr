@@ -177,7 +177,7 @@ export default async function DashboardPage() {
                 {absences.map((absence, index) => {
                   const canSeeType = canSeeLeaveDetails(
                     session,
-                    { employeeId: absence.employee.id, employeeManagerId: null },
+                    { employeeId: absence.employee.id, managerIds: [] },
                     absence.leaveType.isMedical,
                   );
 

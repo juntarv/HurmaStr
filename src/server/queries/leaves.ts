@@ -29,6 +29,7 @@ const approvalInclude = {
           lastName: true,
           avatarUrl: true,
           managerId: true,
+          coManagers: { select: { id: true } },
           position: { select: { title: true } },
           department: { select: { name: true } },
         },
@@ -43,7 +44,22 @@ const approvalInclude = {
 /** Кроки погодження, рішення по яких має ухвалити саме ця людина. */
 export async function getPendingApprovalsFor(session: Session) {
   const or: object[] = [];
-  if (session.employeeId) or.push({ approverId: session.employeeId });
+  if (session.employeeId) {
+    // Крок керівника: погоджує будь-хто з керівників заявника
+    // (основний, додатковий або керівник відділу).
+    or.push({
+      role: "MANAGER",
+      request: {
+        employee: {
+          OR: [
+            { managerId: session.employeeId },
+            { coManagers: { some: { id: session.employeeId } } },
+            { department: { headId: session.employeeId } },
+          ],
+        },
+      },
+    });
+  }
   // Крок HR знеособлений — його закриває будь-який HR або адміністратор.
   if (isHrOrAdmin(session)) or.push({ role: "HR", approverId: null });
   if (or.length === 0) return [];
@@ -101,6 +117,7 @@ export async function getRequestById(id: string) {
           lastName: true,
           avatarUrl: true,
           managerId: true,
+          coManagers: { select: { id: true } },
           position: { select: { title: true } },
           department: { select: { name: true } },
         },

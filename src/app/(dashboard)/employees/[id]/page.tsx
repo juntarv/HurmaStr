@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Cake, Mail, MapPin, Package, Pencil, Phone, Send, Users } from "lucide-react";
+import { Cake, Mail, MapPin, MessagesSquare, Package, Pencil, Phone, Send, Users } from "lucide-react";
 import { requireSession } from "@/lib/auth";
-import { canManageEmployees, canViewPayroll, canViewSensitive, isAdmin } from "@/lib/permissions";
+import { canManageEmployees, canViewPayroll, canViewSensitive, isAdmin, managerSet } from "@/lib/permissions";
 import { getEmployeeById } from "@/server/queries/employees";
 import { getEmployeeBalances } from "@/server/services/balance";
 import { getAssetsForEmployee } from "@/server/queries/assets";
@@ -54,11 +54,21 @@ export default async function EmployeePage({ params }: { params: Promise<{ id: s
   const canManage = canManageEmployees(session);
   const canSeePrivate = canViewSensitive(session, {
     id: employee.id,
-    managerId: employee.managerId,
+    managerIds: managerSet(employee),
   });
   const canSeePayroll = canViewPayroll(session, { id: employee.id });
   const hasPayroll =
-    employee.paymentType || employee.payoutAmount != null || employee.walletAddress;
+    employee.paymentType ||
+    employee.paymentType2 ||
+    employee.payoutTotal != null ||
+    employee.payoutAmount != null ||
+    employee.walletAddress;
+
+  // Усі керівники: основний (manager) + додаткові (coManagers).
+  const allManagers = [
+    ...(employee.manager ? [employee.manager] : []),
+    ...employee.coManagers,
+  ];
 
   const year = new Date().getUTCFullYear();
   const [balances, assets] = await Promise.all([
@@ -150,6 +160,16 @@ export default async function EmployeePage({ params }: { params: Promise<{ id: s
                 <span className="text-ink-faint">{ui.notSpecified}</span>
               )}
             </Row>
+            <Row label="MatterMost">
+              {employee.mattermost ? (
+                <span className="flex items-center gap-1.5">
+                  <MessagesSquare className="size-3.5" aria-hidden />
+                  {employee.mattermost}
+                </span>
+              ) : (
+                <span className="text-ink-faint">{ui.notSpecified}</span>
+              )}
+            </Row>
             <Row label="Місто">
               {employee.city ? (
                 <span className="flex items-center gap-1.5">
@@ -205,11 +225,15 @@ export default async function EmployeePage({ params }: { params: Promise<{ id: s
             ) : null}
             <Row label="Тип зайнятості">{employmentTypeLabels[employee.employmentType]}</Row>
             <Row label="Стать">{genderLabels[employee.gender]}</Row>
-            <Row label="Керівник">
-              {employee.manager ? (
-                <Link href={`/employees/${employee.manager.id}`} className="hover:text-brand">
-                  {employee.manager.lastName} {employee.manager.firstName}
-                </Link>
+            <Row label={allManagers.length > 1 ? "Керівники" : "Керівник"}>
+              {allManagers.length > 0 ? (
+                <span className="flex flex-col items-end gap-0.5">
+                  {allManagers.map((m) => (
+                    <Link key={m.id} href={`/employees/${m.id}`} className="hover:text-brand">
+                      {m.lastName} {m.firstName}
+                    </Link>
+                  ))}
+                </span>
               ) : (
                 <span className="text-ink-faint">{ui.notSpecified}</span>
               )}
@@ -227,29 +251,56 @@ export default async function EmployeePage({ params }: { params: Promise<{ id: s
             <Divider />
             {hasPayroll ? (
               <div className="divide-y divide-line">
-                <Row label="Тип оплати">
-                  {employee.paymentType ? (
-                    paymentTypeLabels[employee.paymentType]
-                  ) : (
-                    <span className="text-ink-faint">{ui.notSpecified}</span>
-                  )}
-                </Row>
-                <Row label="Сума">
-                  {employee.payoutAmount != null ? (
+                {employee.payoutTotal != null ? (
+                  <Row label="Загальна ставка">
                     <span className="font-semibold">
-                      {employee.payoutAmount} {employee.payoutCurrency ?? ""}
+                      {employee.payoutTotal} {employee.payoutCurrency ?? ""}
                     </span>
-                  ) : (
-                    <span className="text-ink-faint">{ui.notSpecified}</span>
-                  )}
-                </Row>
-                <Row label="Гаманець / реквізити">
-                  {employee.walletAddress ? (
-                    <span className="break-all font-mono text-xs">{employee.walletAddress}</span>
-                  ) : (
-                    <span className="text-ink-faint">{ui.notSpecified}</span>
-                  )}
-                </Row>
+                  </Row>
+                ) : null}
+
+                {[
+                  {
+                    n: 1,
+                    type: employee.paymentType,
+                    amount: employee.payoutAmount,
+                    wallet: employee.walletAddress,
+                  },
+                  {
+                    n: 2,
+                    type: employee.paymentType2,
+                    amount: employee.payoutAmount2,
+                    wallet: employee.walletAddress2,
+                  },
+                ]
+                  .filter((m) => m.type || m.amount != null || m.wallet)
+                  .map((m) => (
+                    <div key={m.n} className="px-5 py-3">
+                      <p className="text-xs font-semibold text-ink-soft">Спосіб №{m.n}</p>
+                      <div className="mt-1.5 flex flex-col gap-1 text-sm">
+                        <div className="flex items-baseline justify-between gap-2">
+                          <span className="text-ink-muted">Тип</span>
+                          <span className="text-ink">
+                            {m.type ? paymentTypeLabels[m.type] : ui.notSpecified}
+                          </span>
+                        </div>
+                        <div className="flex items-baseline justify-between gap-2">
+                          <span className="text-ink-muted">Сума</span>
+                          <span className="font-semibold text-ink">
+                            {m.amount != null ? `${m.amount} ${employee.payoutCurrency ?? ""}` : "—"}
+                          </span>
+                        </div>
+                        {m.wallet ? (
+                          <div className="flex items-baseline justify-between gap-2">
+                            <span className="text-ink-muted">Реквізити</span>
+                            <span className="break-all text-right font-mono text-xs text-ink">
+                              {m.wallet}
+                            </span>
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))}
               </div>
             ) : (
               <p className="px-5 py-4 text-sm text-ink-muted">Платіжні дані не заповнені.</p>

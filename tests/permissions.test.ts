@@ -104,79 +104,68 @@ describe("canViewSensitive", () => {
     expect(canViewSensitive(HR, { id: "e2" })).toBe(true));
   it("сам співробітник → true", () =>
     expect(canViewSensitive(session("EMPLOYEE", "e1"), { id: "e1" })).toBe(true));
-  it("його керівник (managerId === session.employeeId) → true", () =>
+  it("один із його керівників (є у managerIds) → true", () =>
     expect(
-      canViewSensitive(session("EMPLOYEE", "m1"), { id: "e2", managerId: "m1" }),
+      canViewSensitive(session("EMPLOYEE", "m1"), { id: "e2", managerIds: ["m0", "m1"] }),
     ).toBe(true));
   it("керівник іншого співробітника → false", () =>
     expect(
-      canViewSensitive(session("EMPLOYEE", "m1"), { id: "e2", managerId: "m9" }),
+      canViewSensitive(session("EMPLOYEE", "m1"), { id: "e2", managerIds: ["m9"] }),
     ).toBe(false));
   it("сторонній без збігу → false", () =>
     expect(
-      canViewSensitive(session("EMPLOYEE", "e1"), { id: "e2", managerId: null }),
+      canViewSensitive(session("EMPLOYEE", "e1"), { id: "e2", managerIds: [] }),
     ).toBe(false));
-  it("сесія без employeeId, managerId=null → false (без хибного збігу null===null)", () =>
+  it("сесія без employeeId, managerIds=[null] → false (без хибного збігу null===null)", () =>
     expect(
-      canViewSensitive(session("EMPLOYEE", null), { id: "e2", managerId: null }),
+      canViewSensitive(session("EMPLOYEE", null), { id: "e2", managerIds: [null] }),
     ).toBe(false));
 });
 
 describe("canDecideApproval", () => {
-  const mgrStep = (approverId: string | null) =>
-    ({ role: "MANAGER", approverId }) as const;
-  const hrStep = (approverId: string | null) =>
-    ({ role: "HR", approverId }) as const;
-  const req = (employeeId: string) => ({ employeeId });
+  const mgrStep = { role: "MANAGER" } as const;
+  const hrStep = { role: "HR" } as const;
+  // isManager — чи є користувач одним із керівників заявника.
+  const req = (employeeId: string, isManager = false) => ({ employeeId, isManager });
 
   it("власну заявку не може погодити НІХТО — навіть ADMIN → false", () =>
     expect(
-      canDecideApproval(session("ADMIN", "a1"), hrStep("a1"), req("a1")),
+      canDecideApproval(session("ADMIN", "a1"), hrStep, req("a1")),
     ).toBe(false));
 
-  it("власну заявку не може погодити призначений approver (сам заявник) → false", () =>
+  it("власну заявку не може погодити керівник, що є сам заявником → false", () =>
     expect(
-      canDecideApproval(session("MANAGER", "m1"), mgrStep("m1"), req("m1")),
+      canDecideApproval(session("MANAGER", "m1"), mgrStep, req("m1", true)),
     ).toBe(false));
 
-  it("призначений approverId === session.employeeId (звичайний EMPLOYEE-керівник) → true", () =>
+  it("керівник заявника (isManager) на MANAGER-кроці → true", () =>
     expect(
-      canDecideApproval(session("EMPLOYEE", "m1"), mgrStep("m1"), req("e2")),
+      canDecideApproval(session("EMPLOYEE", "m1"), mgrStep, req("e2", true)),
     ).toBe(true));
 
   it("крок HR + сесія HR → true", () =>
     expect(
-      canDecideApproval(session("HR", "h1"), hrStep(null), req("e2")),
+      canDecideApproval(session("HR", "h1"), hrStep, req("e2")),
     ).toBe(true));
 
   it("крок HR + сесія ADMIN → true", () =>
     expect(
-      canDecideApproval(session("ADMIN", "a1"), hrStep(null), req("e2")),
+      canDecideApproval(session("ADMIN", "a1"), hrStep, req("e2")),
     ).toBe(true));
 
-  it("ADMIN як запасний погоджувач на MANAGER-кроці без призначення → true", () =>
+  it("ADMIN як запасний погоджувач на MANAGER-кроці (не керівник) → true", () =>
     expect(
-      canDecideApproval(session("ADMIN", "a1"), mgrStep(null), req("e2")),
+      canDecideApproval(session("ADMIN", "a1"), mgrStep, req("e2", false)),
     ).toBe(true));
 
-  it("ADMIN запасний навіть коли призначено іншого керівника → true", () =>
+  it("звичайний EMPLOYEE (не керівник) на чужу MANAGER-заявку → false", () =>
     expect(
-      canDecideApproval(session("ADMIN", "a1"), mgrStep("m1"), req("e2")),
-    ).toBe(true));
-
-  it("звичайний EMPLOYEE на чужу MANAGER-заявку без призначення → false", () =>
-    expect(
-      canDecideApproval(session("EMPLOYEE", "e1"), mgrStep(null), req("e2")),
+      canDecideApproval(session("EMPLOYEE", "e1"), mgrStep, req("e2", false)),
     ).toBe(false));
 
-  it("EMPLOYEE на чужу MANAGER-заявку, призначено іншого → false", () =>
+  it("HR не має спец-права на MANAGER-кроці, якщо не керівник і не ADMIN → false", () =>
     expect(
-      canDecideApproval(session("EMPLOYEE", "e1"), mgrStep("m9"), req("e2")),
-    ).toBe(false));
-
-  it("HR не має спец-права на MANAGER-кроці, якщо не призначений і не ADMIN → false", () =>
-    expect(
-      canDecideApproval(session("HR", "h1"), mgrStep(null), req("e2")),
+      canDecideApproval(session("HR", "h1"), mgrStep, req("e2", false)),
     ).toBe(false));
 });
 
@@ -201,11 +190,11 @@ describe("canSeeLeaveDetails", () => {
       canSeeLeaveDetails(session("EMPLOYEE", "e1"), { employeeId: "e1" }, true),
     ).toBe(true));
 
-  it("медичний + його керівник (employeeManagerId === session.employeeId) → true", () =>
+  it("медичний + один із його керівників (є у managerIds) → true", () =>
     expect(
       canSeeLeaveDetails(
         session("EMPLOYEE", "m1"),
-        { employeeId: "e2", employeeManagerId: "m1" },
+        { employeeId: "e2", managerIds: ["m0", "m1"] },
         true,
       ),
     ).toBe(true));
@@ -214,16 +203,16 @@ describe("canSeeLeaveDetails", () => {
     expect(
       canSeeLeaveDetails(
         session("EMPLOYEE", "e1"),
-        { employeeId: "e2", employeeManagerId: "m9" },
+        { employeeId: "e2", managerIds: ["m9"] },
         true,
       ),
     ).toBe(false));
 
-  it("медичний + сесія без employeeId, employeeManagerId=null → false", () =>
+  it("медичний + сесія без employeeId, managerIds=[] → false", () =>
     expect(
       canSeeLeaveDetails(
         session("EMPLOYEE", null),
-        { employeeId: "e2", employeeManagerId: null },
+        { employeeId: "e2", managerIds: [] },
         true,
       ),
     ).toBe(false));

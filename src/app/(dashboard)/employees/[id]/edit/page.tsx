@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/auth";
-import { canManageEmployees } from "@/lib/permissions";
+import { canManageEmployees, managerSet } from "@/lib/permissions";
 import { getEmployeeById, getEmployeeFormOptions } from "@/server/queries/employees";
 import { updateEmployeeAction } from "@/server/actions/employees";
 import { PageHeader } from "@/components/ui";
@@ -33,7 +33,7 @@ export default async function EditEmployeePage({
       <EmployeeForm
         action={updateEmployeeAction}
         options={options}
-        values={employee}
+        values={{ ...employee, managerIds: managerSet(employee) }}
         submitLabel="Зберегти зміни"
       />
     </div>

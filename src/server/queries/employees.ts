@@ -61,7 +61,16 @@ export async function getEmployeeById(id: string) {
       manager: {
         select: { id: true, firstName: true, lastName: true, avatarUrl: true },
       },
+      coManagers: {
+        select: { id: true, firstName: true, lastName: true, avatarUrl: true, position: { select: { title: true } } },
+        orderBy: [{ lastName: "asc" }],
+      },
       subordinates: {
+        where: { isArchived: false },
+        select: { id: true, firstName: true, lastName: true, avatarUrl: true, position: { select: { title: true } } },
+        orderBy: [{ lastName: "asc" }],
+      },
+      coManaging: {
         where: { isArchived: false },
         select: { id: true, firstName: true, lastName: true, avatarUrl: true, position: { select: { title: true } } },
         orderBy: [{ lastName: "asc" }],
@@ -95,14 +104,16 @@ export async function getEmployeeFormOptions(excludeEmployeeId?: string) {
       select: { id: true, title: true },
       orderBy: { sortOrder: "asc" },
     }),
+    // Керівниками можуть бути лише керівні посади (CEO/COO/Head/Lead).
     prisma.employee.findMany({
       where: {
         isArchived: false,
         status: { not: "TERMINATED" },
+        position: { isManagerial: true },
         ...(excludeEmployeeId ? { id: { not: excludeEmployeeId } } : {}),
       },
-      select: { id: true, firstName: true, lastName: true },
-      orderBy: [{ lastName: "asc" }],
+      select: { id: true, firstName: true, lastName: true, position: { select: { title: true } } },
+      orderBy: [{ position: { sortOrder: "asc" } }, { lastName: "asc" }],
     }),
   ]);
 

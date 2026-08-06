@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Check, Clock, Paperclip, X } from "lucide-react";
 import { requireSession } from "@/lib/auth";
-import { canDecideApproval, canSeeLeaveDetails, isHrOrAdmin, isSelf } from "@/lib/permissions";
+import { canDecideApproval, canSeeLeaveDetails, isHrOrAdmin, isManagerOf, isSelf, managerSet } from "@/lib/permissions";
 import { getRequestById } from "@/server/queries/leaves";
 import { Avatar, Badge, Card, CardHeader, Divider, PageHeader } from "@/components/ui";
 import { LeaveTypeIcon } from "@/components/icons";
@@ -32,21 +32,18 @@ export default async function LeaveRequestPage({
   if (!request) notFound();
 
   const owner = isSelf(session, request.employeeId);
-  const isManagerOfOwner =
-    !!session.employeeId && request.employee.managerId === session.employeeId;
+  const managers = managerSet(request.employee);
+  const isManagerOfOwner = isManagerOf(session, managers);
 
-  // Заявку бачать: автор, його керівник, HR/адмін і призначені погоджувачі.
-  const isAssignedApprover = request.approvals.some(
-    (approval) => approval.approverId && approval.approverId === session.employeeId,
-  );
-  if (!owner && !isManagerOfOwner && !isHrOrAdmin(session) && !isAssignedApprover) {
+  // Заявку бачать: автор, його керівники, HR/адмін.
+  if (!owner && !isManagerOfOwner && !isHrOrAdmin(session)) {
     return forbidden("Ця заявка належить іншому співробітнику.");
   }
 
   // Медичні типи ховаємо від сторонніх очей.
   const showType = canSeeLeaveDetails(
     session,
-    { employeeId: request.employeeId, employeeManagerId: request.employee.managerId },
+    { employeeId: request.employeeId, managerIds: managers },
     request.leaveType.isMedical,
   );
 
@@ -58,8 +55,8 @@ export default async function LeaveRequestPage({
     !!activeApproval &&
     canDecideApproval(
       session,
-      { role: activeApproval.role, approverId: activeApproval.approverId },
-      { employeeId: request.employeeId },
+      { role: activeApproval.role },
+      { employeeId: request.employeeId, isManager: isManagerOfOwner },
     );
 
   const canCancel =

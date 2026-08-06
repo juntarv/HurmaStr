@@ -165,7 +165,7 @@ export default async function CalendarPage({
                     {dayLeaves.map((leave, index) => {
                       const showType = canSeeLeaveDetails(
                         session,
-                        { employeeId: leave.employee.id, employeeManagerId: null },
+                        { employeeId: leave.employee.id, managerIds: [] },
                         leave.leaveType.isMedical,
                       );
                       const color = showType ? safeColor(leave.leaveType.colorHex) : "#9CA3AF";

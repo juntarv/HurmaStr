@@ -12,6 +12,7 @@ const schema = z.object({
   title: z.string().min(2, "Назва щонайменше 2 символи").max(100),
   departmentId: z.string().nullable(),
   sortOrder: z.coerce.number().int().min(0).max(9999),
+  isManagerial: z.coerce.boolean(),
 });
 
 function read(formData: FormData) {
@@ -21,6 +22,8 @@ function read(formData: FormData) {
     title: String(formData.get("title") ?? "").trim(),
     departmentId: dep === "" ? null : dep,
     sortOrder: order === "" ? 0 : order,
+    // checkbox: присутній у formData лише коли увімкнено
+    isManagerial: formData.get("isManagerial") != null,
   };
 }
 
@@ -56,6 +59,7 @@ export async function updatePositionAction(
   await prisma.position.update({ where: { id }, data: parsed.data });
   revalidatePath("/positions");
   revalidatePath("/employees");
+  revalidatePath("/employees/new");
   return { ok: true, message: "Посаду оновлено" };
 }
 

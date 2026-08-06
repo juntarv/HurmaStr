@@ -11,10 +11,12 @@ import {
   employeeCoreSchema,
   formValue,
   readEmployeeForm,
+  readManagerIds,
   readSelfContactsForm,
   selfContactsSchema,
 } from "@/server/schemas/employee";
 import { getBalanceForType, round1 } from "@/server/services/balance";
+import { deleteAvatar, isAllowedAvatar, saveAvatar } from "@/lib/uploads";
 
 export type ActionResult =
   | { ok: true; message?: string; inviteLink?: string }
@@ -50,6 +52,7 @@ function searchKeyFrom(data: {
   personalEmail: string | null;
   phone: string | null;
   telegram: string | null;
+  mattermost?: string | null;
 }): string {
   return buildSearchKey([
     data.lastName,
@@ -59,7 +62,39 @@ function searchKeyFrom(data: {
     data.personalEmail,
     data.phone,
     data.telegram,
+    data.mattermost,
   ]);
+}
+
+/**
+ * Призначає керівників: перший зі списку — основний (managerId, для оргдерева
+ * й перевірки циклів), решта — додаткові (coManagers). Себе виключаємо.
+ */
+async function applyManagers(
+  employeeId: string,
+  managerIds: string[],
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const ids = [...new Set(managerIds.filter((m) => m && m !== employeeId))];
+  const primary = ids[0] ?? null;
+  if (primary && (await wouldCreateCycle(employeeId, primary))) {
+    return { ok: false, error: "Такий керівник створить цикл в оргструктурі" };
+  }
+  await prisma.employee.update({
+    where: { id: employeeId },
+    data: {
+      managerId: primary,
+      coManagers: { set: ids.slice(1).map((cid) => ({ id: cid })) },
+    },
+  });
+  return { ok: true };
+}
+
+/** Зберігає завантажене фото (якщо є) і повертає ім'я файлу або null. */
+async function readPhoto(formData: FormData): Promise<string | null | "invalid"> {
+  const photo = formData.get("photo");
+  if (!(photo instanceof File) || photo.size === 0) return null;
+  if (!isAllowedAvatar(photo)) return "invalid";
+  return saveAvatar(photo);
 }
 
 // ============================ СТВОРЕННЯ ======================================
@@ -83,15 +118,30 @@ export async function createEmployeeAction(
     if (taken) return { ok: false, error: "Такий робочий email уже використовується" };
   }
 
+  const photo = await readPhoto(formData);
+  if (photo === "invalid") return { ok: false, error: "Фото: лише зображення до 5 МБ" };
+
   let created;
   try {
     created = await prisma.employee.create({
-      data: { ...input, searchKey: searchKeyFrom(input) },
+      data: { ...input, avatarFile: photo, searchKey: searchKeyFrom(input) },
       select: { id: true },
     });
   } catch {
     return { ok: false, error: "Не вдалося створити картку. Перевірте унікальні поля." };
   }
+
+  // Фото віддається роутом за id картки.
+  if (photo) {
+    await prisma.employee.update({
+      where: { id: created.id },
+      data: { avatarUrl: `/api/avatars/${created.id}` },
+    });
+  }
+
+  // Керівники (кілька).
+  const mgr = await applyManagers(created.id, readManagerIds(formData));
+  if (!mgr.ok) return mgr;
 
   // Міграція: якщо вказано вже накопичену відпустку — виставляємо баланс так,
   // щоб доступний залишок дорівнював цьому числу (коригуванням).
@@ -146,10 +196,6 @@ export async function updateEmployeeAction(
   }
   const input = parsed.data;
 
-  if (input.managerId && (await wouldCreateCycle(id, input.managerId))) {
-    return { ok: false, error: "Такий керівник створить цикл в оргструктурі" };
-  }
-
   if (input.workEmail) {
     const taken = await prisma.employee.findUnique({
       where: { workEmail: input.workEmail },
@@ -160,10 +206,25 @@ export async function updateEmployeeAction(
     }
   }
 
+  const photo = await readPhoto(formData);
+  if (photo === "invalid") return { ok: false, error: "Фото: лише зображення до 5 МБ" };
+
+  // Нове фото заміняє старий файл.
+  let avatarPatch = {};
+  if (photo) {
+    const prev = await prisma.employee.findUnique({ where: { id }, select: { avatarFile: true } });
+    if (prev?.avatarFile) await deleteAvatar(prev.avatarFile);
+    avatarPatch = { avatarFile: photo, avatarUrl: `/api/avatars/${id}` };
+  }
+
   await prisma.employee.update({
     where: { id },
-    data: { ...input, searchKey: searchKeyFrom(input) },
+    data: { ...input, ...avatarPatch, searchKey: searchKeyFrom(input) },
   });
+
+  // Керівники (кілька).
+  const mgr = await applyManagers(id, readManagerIds(formData));
+  if (!mgr.ok) return mgr;
 
   revalidatePath("/employees");
   revalidatePath(`/employees/${id}`);

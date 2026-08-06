@@ -68,3 +68,44 @@ export async function deleteLeaveAttachment(storedName: string): Promise<void> {
     // файлу вже немає — не критично
   }
 }
+
+// ============================== ФОТО (аватари) ==============================
+
+const AVATAR_DIR = path.join(STORAGE_ROOT, "avatars");
+const AVATAR_MIME = new Set(["image/jpeg", "image/png", "image/webp", "image/heic"]);
+export const MAX_AVATAR_BYTES = 5 * 1024 * 1024; // 5 МБ
+
+export function isAllowedAvatar(file: File): boolean {
+  return AVATAR_MIME.has(file.type) && file.size > 0 && file.size <= MAX_AVATAR_BYTES;
+}
+
+/** Зберігає фото співробітника, повертає ім'я файлу на диску. */
+export async function saveAvatar(file: File): Promise<string> {
+  await mkdir(AVATAR_DIR, { recursive: true });
+  const ext = EXT_BY_MIME[file.type] ?? ".jpg";
+  const storedName = `${randomBytes(16).toString("hex")}${ext}`;
+  await writeFile(path.join(AVATAR_DIR, storedName), Buffer.from(await file.arrayBuffer()));
+  return storedName;
+}
+
+export async function readAvatar(storedName: string): Promise<Buffer> {
+  const safe = path.basename(storedName);
+  const full = path.join(AVATAR_DIR, safe);
+  if (!full.startsWith(AVATAR_DIR)) throw new Error("Недопустимий шлях");
+  return readFile(full);
+}
+
+export function avatarMime(storedName: string): string {
+  if (storedName.endsWith(".png")) return "image/png";
+  if (storedName.endsWith(".webp")) return "image/webp";
+  if (storedName.endsWith(".heic")) return "image/heic";
+  return "image/jpeg";
+}
+
+export async function deleteAvatar(storedName: string): Promise<void> {
+  try {
+    await unlink(path.join(AVATAR_DIR, path.basename(storedName)));
+  } catch {
+    // не критично
+  }
+}

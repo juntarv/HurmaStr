@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { CheckCheck } from "lucide-react";
 import { requireSession } from "@/lib/auth";
-import { canSeeLeaveDetails } from "@/lib/permissions";
+import { canSeeLeaveDetails, managerSet } from "@/lib/permissions";
 import { getPendingApprovalsFor } from "@/server/queries/leaves";
 import { Avatar, Card, CardHeader, Divider, EmptyState, PageHeader } from "@/components/ui";
 import { LeaveTypeIcon } from "@/components/icons";
@@ -43,7 +43,7 @@ export default async function ApprovalsPage() {
               session,
               {
                 employeeId: request.employeeId,
-                employeeManagerId: request.employee.managerId,
+                managerIds: managerSet(request.employee),
               },
               request.leaveType.isMedical,
             );

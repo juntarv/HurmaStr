@@ -12,6 +12,7 @@ export function ProfileForm({
     personalEmail: string | null;
     phone: string | null;
     telegram: string | null;
+    mattermost: string | null;
     city: string | null;
     emergencyContactName: string | null;
     emergencyContactPhone: string | null;
@@ -37,6 +38,9 @@ export function ProfileForm({
       </Field>
       <Field label="Telegram" htmlFor="telegram">
         <Input id="telegram" name="telegram" defaultValue={values.telegram ?? ""} />
+      </Field>
+      <Field label="MatterMost" htmlFor="mattermost">
+        <Input id="mattermost" name="mattermost" defaultValue={values.mattermost ?? ""} placeholder="@nickname" />
       </Field>
       <Field label="Місто" htmlFor="city">
         <Input id="city" name="city" defaultValue={values.city ?? ""} />

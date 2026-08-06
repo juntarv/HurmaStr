@@ -1,7 +1,7 @@
 import { type NextRequest } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { isHrOrAdmin, isSelf } from "@/lib/permissions";
+import { isHrOrAdmin, isManagerOf, isSelf, managerSet } from "@/lib/permissions";
 import { readLeaveAttachment } from "@/lib/uploads";
 
 /**
@@ -24,7 +24,7 @@ export async function GET(
       attachmentPath: true,
       attachmentName: true,
       attachmentMime: true,
-      employee: { select: { managerId: true } },
+      employee: { select: { managerId: true, coManagers: { select: { id: true } } } },
     },
   });
 
@@ -33,7 +33,7 @@ export async function GET(
   const allowed =
     isHrOrAdmin(session) ||
     isSelf(session, request.employeeId) ||
-    (!!session.employeeId && request.employee.managerId === session.employeeId);
+    isManagerOf(session, managerSet(request.employee));
   if (!allowed) return new Response("Немає доступу", { status: 403 });
 
   let data: Buffer;

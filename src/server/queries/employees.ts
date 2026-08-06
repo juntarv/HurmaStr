@@ -40,6 +40,7 @@ export async function listEmployees(filters: EmployeeFilters = {}) {
       workEmail: true,
       phone: true,
       telegram: true,
+      mattermost: true,
       status: true,
       isArchived: true,
       hireDate: true,

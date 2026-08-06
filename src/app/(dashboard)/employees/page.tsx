@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Mail, Phone, Plus, Search, Send, UserRound } from "lucide-react";
+import { Mail, MessagesSquare, Phone, Plus, Search, Send, UserRound } from "lucide-react";
 import { requireSession } from "@/lib/auth";
 import { canManageEmployees, isAdmin } from "@/lib/permissions";
 import { listEmployees } from "@/server/queries/employees";
@@ -56,6 +56,12 @@ function EmployeeRow({ employee, canManage }: { employee: EmployeeListItem; canM
             <p className="mt-0.5 flex items-center gap-1.5">
               <Send className="size-3.5 shrink-0" aria-hidden />
               {employee.telegram}
+            </p>
+          ) : null}
+          {employee.mattermost ? (
+            <p className="mt-0.5 flex items-center gap-1.5">
+              <MessagesSquare className="size-3.5 shrink-0" aria-hidden />
+              {employee.mattermost}
             </p>
           ) : null}
         </div>

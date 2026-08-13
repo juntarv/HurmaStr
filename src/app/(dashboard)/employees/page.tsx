@@ -118,18 +118,22 @@ export default async function EmployeesPage({
 
   // Звільнені живуть в окремій «папці» внизу — бачить її лише адмін.
   const canSeeTerminated = isAdmin(session);
-  // Whitelist: TERMINATED з URL ігноруємо — звільнені лише в адмінській секції.
+  // Фільтр «Звільнений» доступний лише адміну: показує тільки секцію звільнених.
+  const terminatedOnly = canSeeTerminated && params.status === "TERMINATED";
+  // Whitelist: TERMINATED в основний список не потрапляє ніколи.
   const status =
     params.status === "PROBATION" || params.status === "ACTIVE"
       ? (params.status as EmployeeStatus)
       : undefined;
 
   const [employees, terminated, departments] = await Promise.all([
-    listEmployees({
-      q: params.q,
-      departmentId: params.department || undefined,
-      status,
-    }),
+    terminatedOnly
+      ? Promise.resolve([])
+      : listEmployees({
+          q: params.q,
+          departmentId: params.department || undefined,
+          status,
+        }),
     canSeeTerminated ? listTerminatedEmployees(params.q) : Promise.resolve([]),
     prisma.department.findMany({
       where: { isArchived: false },
@@ -171,8 +175,8 @@ export default async function EmployeesPage({
         <Select name="status" defaultValue={params.status ?? ""} className="w-auto min-w-40">
           <option value="">Усі статуси</option>
           {(Object.keys(employeeStatusLabels) as EmployeeStatus[])
-            // «Звільнений» у фільтрі не пропонуємо — звільнених показує окремий перемикач (лише адмін).
-            .filter((value) => value !== "TERMINATED")
+            // «Звільнений» у фільтрі бачить лише адмін — для решти звільнених не існує.
+            .filter((value) => value !== "TERMINATED" || canSeeTerminated)
             .map((value) => (
               <option key={value} value={value}>
                 {employeeStatusLabels[value]}
@@ -194,7 +198,7 @@ export default async function EmployeesPage({
 
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <h1 className="text-2xl font-semibold tracking-tight text-ink">
-          Співробітники — {employees.length}
+          Співробітники — {terminatedOnly ? terminated.length : employees.length}
         </h1>
         {canManage ? (
           <Link href="/employees/new">
@@ -206,7 +210,18 @@ export default async function EmployeesPage({
         ) : null}
       </div>
 
-      {employees.length === 0 ? (
+      {terminatedOnly ? (
+        // Режим «Звільнений»: основний список ховаємо, лишається секція нижче.
+        terminated.length === 0 ? (
+          <Card>
+            <EmptyState
+              icon={<UserRound className="size-5" />}
+              title={ui.nothingFound}
+              description="Звільнених співробітників не знайдено."
+            />
+          </Card>
+        ) : null
+      ) : employees.length === 0 ? (
         <Card>
           <EmptyState
             icon={<UserRound className="size-5" />}
@@ -250,7 +265,7 @@ export default async function EmployeesPage({
 
       {/* --------------- Окрема «папка» звільнених (лише адмін) --------------- */}
       {canSeeTerminated && terminated.length > 0 ? (
-        <section className="mt-8">
+        <section className={terminatedOnly ? "" : "mt-8"}>
           <div className="mb-2 flex items-center gap-2 px-1">
             <h2 className="text-sm font-semibold text-danger">Звільнені</h2>
             <span className="inline-flex items-center rounded-full bg-danger-soft px-2 py-0.5 text-xs font-medium text-danger">

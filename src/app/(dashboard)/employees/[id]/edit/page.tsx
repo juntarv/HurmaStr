@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/auth";
-import { canManageEmployees, managerSet } from "@/lib/permissions";
+import { canManageEmployees, isAdmin, managerSet } from "@/lib/permissions";
 import { getEmployeeById, getEmployeeFormOptions } from "@/server/queries/employees";
 import { updateEmployeeAction } from "@/server/actions/employees";
 import { PageHeader } from "@/components/ui";
@@ -23,6 +23,9 @@ export default async function EditEmployeePage({
     getEmployeeFormOptions(id),
   ]);
   if (!employee) notFound();
+  // Звільнених бачить (і редагує/відновлює) лише адміністратор —
+  // для решти картка «не існує», і /edit не має бути обхідним шляхом.
+  if (employee.status === "TERMINATED" && !isAdmin(session)) notFound();
 
   return (
     <div className="mx-auto max-w-4xl">

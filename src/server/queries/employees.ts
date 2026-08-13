@@ -5,51 +5,71 @@ export type EmployeeFilters = {
   q?: string;
   departmentId?: string;
   status?: EmployeeStatus;
-  /**
-   * Показати звільнених та архівних. Дозволено ЛИШЕ адміністратору —
-   * викликач мусить сам це гарантувати (щоб звільнених не бачив ніхто інший).
-   */
-  showTerminated?: boolean;
 };
 
 /**
- * Список співробітників із пошуком і фільтрами.
+ * Список ПРАЦЮЮЧИХ співробітників із пошуком і фільтрами.
  * Пошук іде по searchKey — денормалізованому полю в нижньому регістрі,
  * бо SQLite не вміє insensitive-пошук по кирилиці.
  *
- * Звільнених (status TERMINATED) і архівних видно лише коли showTerminated=true;
- * за замовчуванням список містить тих, хто працює.
+ * Звільнені й архівні сюди не потрапляють ніколи — для них
+ * є listTerminatedEmployees (окрема «папка», лише адміну).
  */
 export async function listEmployees(filters: EmployeeFilters = {}) {
   const query = filters.q?.trim().toLowerCase();
 
   return prisma.employee.findMany({
     where: {
-      // Без явного показу — приховуємо і архівних, і звільнених.
-      ...(filters.showTerminated ? {} : { isArchived: false, status: { not: "TERMINATED" } }),
+      isArchived: false,
+      // Виключення звільнених — через AND, щоб фільтр статусу з URL
+      // (?status=TERMINATED) не міг перезаписати guard однойменним ключем.
+      AND: [
+        { status: { not: "TERMINATED" } },
+        ...(filters.status && filters.status !== "TERMINATED"
+          ? [{ status: filters.status }]
+          : []),
+      ],
       ...(filters.departmentId ? { departmentId: filters.departmentId } : {}),
-      ...(filters.status ? { status: filters.status } : {}),
       ...(query ? { searchKey: { contains: query } } : {}),
     },
-    select: {
-      id: true,
-      firstName: true,
-      lastName: true,
-      middleName: true,
-      avatarUrl: true,
-      workEmail: true,
-      phone: true,
-      telegram: true,
-      mattermost: true,
-      status: true,
-      isArchived: true,
-      hireDate: true,
-      birthDate: true,
-      position: { select: { title: true } },
-      department: { select: { id: true, name: true } },
-      account: { select: { id: true, lastLoginAt: true, inviteAcceptedAt: true, isActive: true } },
-    },
+    select: listSelect,
     orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+  });
+}
+
+const listSelect = {
+  id: true,
+  firstName: true,
+  lastName: true,
+  middleName: true,
+  avatarUrl: true,
+  workEmail: true,
+  phone: true,
+  telegram: true,
+  mattermost: true,
+  status: true,
+  isArchived: true,
+  hireDate: true,
+  birthDate: true,
+  terminationDate: true,
+  position: { select: { title: true } },
+  department: { select: { id: true, name: true } },
+  account: { select: { id: true, lastLoginAt: true, inviteAcceptedAt: true, isActive: true } },
+} as const;
+
+/**
+ * Окрема «папка» звільнених. Викликач мусить гарантувати, що це адмін —
+ * нікому іншому звільнених не видно.
+ */
+export async function listTerminatedEmployees(q?: string) {
+  const query = q?.trim().toLowerCase();
+  return prisma.employee.findMany({
+    where: {
+      status: "TERMINATED",
+      ...(query ? { searchKey: { contains: query } } : {}),
+    },
+    select: listSelect,
+    orderBy: [{ terminationDate: "desc" }, { lastName: "asc" }],
   });
 }
 
@@ -88,6 +108,11 @@ export async function getEmployeeById(id: string) {
         },
       },
       headedDepartments: { select: { id: true, name: true } },
+      // Кадрові документи — сторінка сама вирішує, кому їх показувати.
+      documents: {
+        select: { id: true, kind: true, fileName: true, size: true, updatedAt: true },
+        orderBy: { kind: "asc" },
+      },
     },
   });
 }

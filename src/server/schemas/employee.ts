@@ -29,7 +29,8 @@ const optionalPhone = z
   .regex(/^[\d\s+()-]{5,20}$/, "Некоректний номер телефону")
   .nullable();
 
-export const employeeCoreSchema = z.object({
+export const employeeCoreSchema = z
+  .object({
   lastName: nameField,
   firstName: nameField,
   middleName: z.string().max(60).nullable(),
@@ -48,6 +49,8 @@ export const employeeCoreSchema = z.object({
   probationEndDate: z.coerce.date().nullable(),
 
   status: z.enum(["PROBATION", "ACTIVE", "TERMINATED"]),
+  /// Обов'язкова, коли статус «Звільнений» (див. refine нижче).
+  terminationDate: z.coerce.date().nullable(),
   employmentType: z.enum(["FULL_TIME", "PART_TIME", "CONTRACT", "FOP", "INTERN"]),
 
   positionId: z.string().nullable(),
@@ -67,7 +70,11 @@ export const employeeCoreSchema = z.object({
   walletAddress2: z.string().max(200).nullable(),
 
   note: z.string().max(2000).nullable(),
-});
+  })
+  .refine((d) => d.status !== "TERMINATED" || !!d.terminationDate, {
+    message: "Вкажіть дату звільнення",
+    path: ["terminationDate"],
+  });
 
 export type EmployeeCoreInput = z.infer<typeof employeeCoreSchema>;
 
@@ -99,6 +106,7 @@ export function readEmployeeForm(formData: FormData) {
     hireDate: formValue(formData, "hireDate"),
     probationEndDate: formValue(formData, "probationEndDate"),
     status: formValue(formData, "status") ?? "PROBATION",
+    terminationDate: formValue(formData, "terminationDate"),
     employmentType: formValue(formData, "employmentType") ?? "FULL_TIME",
     positionId: formValue(formData, "positionId"),
     departmentId: formValue(formData, "departmentId"),

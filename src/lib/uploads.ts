@@ -109,3 +109,50 @@ export async function deleteAvatar(storedName: string): Promise<void> {
     // не критично
   }
 }
+
+// ==================== КАДРОВІ ДОКУМЕНТИ (офер, посадова) ====================
+
+const DOCS_DIR = path.join(STORAGE_ROOT, "documents");
+// Офери/інструкції — PDF, Word або скан-зображення.
+const DOC_MIME_EXT: Record<string, string> = {
+  "application/pdf": ".pdf",
+  "application/msword": ".doc",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+  "image/jpeg": ".jpg",
+  "image/png": ".png",
+  "image/webp": ".webp",
+};
+export const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024; // 10 МБ
+
+export function isAllowedDocument(file: File): boolean {
+  // hasOwn, а не `in`: інакше ковані MIME на кшталт "constructor"
+  // проходили б whitelist через успадковані ключі Object.prototype.
+  return (
+    Object.hasOwn(DOC_MIME_EXT, file.type) && file.size > 0 && file.size <= MAX_DOCUMENT_BYTES
+  );
+}
+
+/** Зберігає кадровий документ під випадковим ім'ям, повертає ім'я на диску. */
+export async function saveEmployeeDocument(file: File): Promise<string> {
+  await mkdir(DOCS_DIR, { recursive: true });
+  const ext = Object.hasOwn(DOC_MIME_EXT, file.type) ? DOC_MIME_EXT[file.type] : "";
+  const storedName = `${randomBytes(16).toString("hex")}${ext}`;
+  await writeFile(path.join(DOCS_DIR, storedName), Buffer.from(await file.arrayBuffer()));
+  return storedName;
+}
+
+/** storedName береться ВИКЛЮЧНО з БД — user-input у шлях не потрапляє. */
+export async function readEmployeeDocument(storedName: string): Promise<Buffer> {
+  const safe = path.basename(storedName);
+  const full = path.join(DOCS_DIR, safe);
+  if (!full.startsWith(DOCS_DIR)) throw new Error("Недопустимий шлях");
+  return readFile(full);
+}
+
+export async function deleteEmployeeDocument(storedName: string): Promise<void> {
+  try {
+    await unlink(path.join(DOCS_DIR, path.basename(storedName)));
+  } catch {
+    // файлу вже немає — не критично
+  }
+}

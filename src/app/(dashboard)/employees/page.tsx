@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Mail, MessagesSquare, Phone, Plus, Search, Send, UserRound } from "lucide-react";
 import { requireSession } from "@/lib/auth";
 import { canManageEmployees, isAdmin } from "@/lib/permissions";
-import { listEmployees } from "@/server/queries/employees";
+import { listEmployees, listTerminatedEmployees } from "@/server/queries/employees";
 import { prisma } from "@/lib/prisma";
 import { Avatar, Badge, Button, Card, EmptyState, Input, Select } from "@/components/ui";
 import { employeeStatusLabels, employeeStatusTone, ui } from "@/lib/labels";
@@ -76,7 +76,9 @@ function EmployeeRow({ employee, canManage }: { employee: EmployeeListItem; canM
         </div>
 
         <p className="w-full text-xs text-ink-faint sm:w-auto">
-          з {formatDateUk(employee.hireDate)}
+          {employee.status === "TERMINATED" && employee.terminationDate
+            ? `звільнений ${formatDateUk(employee.terminationDate)}`
+            : `з ${formatDateUk(employee.hireDate)}`}
         </p>
       </Card>
     </li>
@@ -109,23 +111,26 @@ function groupByDepartment(
 export default async function EmployeesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; department?: string; status?: string; archived?: string }>;
+  searchParams: Promise<{ q?: string; department?: string; status?: string }>;
 }) {
   const session = await requireSession();
   const params = await searchParams;
 
-  // Звільнених показуємо лише адміну і лише коли він явно ввімкнув перемикач.
+  // Звільнені живуть в окремій «папці» внизу — бачить її лише адмін.
   const canSeeTerminated = isAdmin(session);
-  const showTerminated = canSeeTerminated && params.archived === "1";
-  const status = (params.status || undefined) as EmployeeStatus | undefined;
+  // Whitelist: TERMINATED з URL ігноруємо — звільнені лише в адмінській секції.
+  const status =
+    params.status === "PROBATION" || params.status === "ACTIVE"
+      ? (params.status as EmployeeStatus)
+      : undefined;
 
-  const [employees, departments] = await Promise.all([
+  const [employees, terminated, departments] = await Promise.all([
     listEmployees({
       q: params.q,
       departmentId: params.department || undefined,
       status,
-      showTerminated,
     }),
+    canSeeTerminated ? listTerminatedEmployees(params.q) : Promise.resolve([]),
     prisma.department.findMany({
       where: { isArchived: false },
       select: { id: true, name: true },
@@ -134,7 +139,7 @@ export default async function EmployeesPage({
   ]);
 
   const canManage = canManageEmployees(session);
-  const hasFilters = Boolean(params.q || params.department || params.status || showTerminated);
+  const hasFilters = Boolean(params.q || params.department || params.status);
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -174,19 +179,6 @@ export default async function EmployeesPage({
               </option>
             ))}
         </Select>
-
-        {canSeeTerminated ? (
-          <label className="flex items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink-soft">
-            <input
-              type="checkbox"
-              name="archived"
-              value="1"
-              defaultChecked={showTerminated}
-              className="size-4 accent-[var(--color-brand)]"
-            />
-            Показати звільнених
-          </label>
-        ) : null}
 
         <Button type="submit" variant="secondary">
           Знайти
@@ -255,6 +247,23 @@ export default async function EmployeesPage({
           ))}
         </div>
       )}
+
+      {/* --------------- Окрема «папка» звільнених (лише адмін) --------------- */}
+      {canSeeTerminated && terminated.length > 0 ? (
+        <section className="mt-8">
+          <div className="mb-2 flex items-center gap-2 px-1">
+            <h2 className="text-sm font-semibold text-danger">Звільнені</h2>
+            <span className="inline-flex items-center rounded-full bg-danger-soft px-2 py-0.5 text-xs font-medium text-danger">
+              {terminated.length}
+            </span>
+          </div>
+          <ul className="flex flex-col gap-2 opacity-75">
+            {terminated.map((employee) => (
+              <EmployeeRow key={employee.id} employee={employee} canManage={canManage} />
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       {employees.length > 0 ? (
         <p className="mt-4 text-xs text-ink-muted">

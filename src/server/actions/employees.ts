@@ -113,6 +113,15 @@ export async function createEmployeeAction(
   }
   const input = parsed.data;
 
+  // Створення одразу «Звільненим» оминало б інваріанти звільнення
+  // (архівацію, вимкнення доступу) — таку картку створювати не можна.
+  if (input.status === "TERMINATED") {
+    return {
+      ok: false,
+      error: "Створіть картку в активному статусі; звільнення виконується редагуванням картки",
+    };
+  }
+
   if (input.workEmail) {
     const taken = await prisma.employee.findUnique({ where: { workEmail: input.workEmail } });
     if (taken) return { ok: false, error: "Такий робочий email уже використовується" };
@@ -196,6 +205,19 @@ export async function updateEmployeeAction(
   }
   const input = parsed.data;
 
+  const prev = await prisma.employee.findUnique({
+    where: { id },
+    select: { status: true, avatarFile: true },
+  });
+  if (!prev) return { ok: false, error: "Співробітника не знайдено" };
+
+  // Будь-які операції над уже звільненим (редагування, відновлення) — лише
+  // адміністратор: для решти звільнені «не існують», і це не можна обійти
+  // прямим сабмітом форми.
+  if (prev.status === "TERMINATED" && !isAdmin(session)) {
+    return { ok: false, error: "Редагувати звільненого може лише адміністратор" };
+  }
+
   if (input.workEmail) {
     const taken = await prisma.employee.findUnique({
       where: { workEmail: input.workEmail },
@@ -206,29 +228,75 @@ export async function updateEmployeeAction(
     }
   }
 
+  // ---- Перехід у статус «Звільнений» через форму = повноцінне звільнення. ----
+  const becameTerminated = input.status === "TERMINATED" && prev.status !== "TERMINATED";
+  const restored = prev.status === "TERMINATED" && input.status !== "TERMINATED";
+
+  if (becameTerminated) {
+    if (isSelf(session, id)) return { ok: false, error: "Не можна звільнити себе" };
+    // Не-адмін не може звільнити (а отже вимкнути) адміністратора/HR.
+    const targetAccount = await prisma.user.findFirst({
+      where: { employeeId: id },
+      select: { role: true },
+    });
+    if (
+      targetAccount &&
+      (targetAccount.role === "ADMIN" || targetAccount.role === "HR") &&
+      !isAdmin(session)
+    ) {
+      return { ok: false, error: "Звільнити адміністратора/HR може лише адміністратор" };
+    }
+  }
+
   const photo = await readPhoto(formData);
   if (photo === "invalid") return { ok: false, error: "Фото: лише зображення до 5 МБ" };
 
   // Нове фото заміняє старий файл.
   let avatarPatch = {};
   if (photo) {
-    const prev = await prisma.employee.findUnique({ where: { id }, select: { avatarFile: true } });
-    if (prev?.avatarFile) await deleteAvatar(prev.avatarFile);
+    if (prev.avatarFile) await deleteAvatar(prev.avatarFile);
     avatarPatch = { avatarFile: photo, avatarUrl: `/api/avatars/${id}` };
   }
 
-  await prisma.employee.update({
-    where: { id },
-    data: { ...input, ...avatarPatch, searchKey: searchKeyFrom(input) },
+  await prisma.$transaction(async (tx) => {
+    await tx.employee.update({
+      where: { id },
+      data: {
+        ...input,
+        // Дата звільнення живе лише разом зі статусом «Звільнений».
+        terminationDate: input.status === "TERMINATED" ? input.terminationDate : null,
+        ...(restored ? { terminationReason: null, isArchived: false, archivedAt: null } : {}),
+        ...(becameTerminated ? { isArchived: true, archivedAt: new Date() } : {}),
+        ...avatarPatch,
+        searchKey: searchKeyFrom(input),
+      },
+    });
+
+    if (becameTerminated) {
+      // Доступ вимикаємо і знецінюємо токени — вхід зникає миттєво.
+      await tx.user.updateMany({
+        where: { employeeId: id },
+        data: { isActive: false, tokenVersion: { increment: 1 } },
+      });
+      // Прибираємо звільненого з оргструктури: підлеглі, співкеровані, відділи.
+      await tx.employee.updateMany({ where: { managerId: id }, data: { managerId: null } });
+      await tx.employee.update({ where: { id }, data: { coManaging: { set: [] } } });
+      await tx.department.updateMany({ where: { headId: id }, data: { headId: null } });
+    }
   });
 
-  // Керівники (кілька).
-  const mgr = await applyManagers(id, readManagerIds(formData));
-  if (!mgr.ok) return mgr;
+  // Керівники (кілька). Звільненому керівників не призначаємо.
+  if (input.status !== "TERMINATED") {
+    const mgr = await applyManagers(id, readManagerIds(formData));
+    if (!mgr.ok) return mgr;
+  }
 
   revalidatePath("/employees");
   revalidatePath(`/employees/${id}`);
   revalidatePath("/org");
+  // Картку звільненого бачить лише адмін — HR після звільнення
+  // повертаємо у список, інакше він упреться в 404.
+  if (input.status === "TERMINATED" && !isAdmin(session)) redirect("/employees");
   redirect(`/employees/${id}`);
 }
 

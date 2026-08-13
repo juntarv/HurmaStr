@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Cake, Mail, MapPin, MessagesSquare, Package, Pencil, Phone, Send, Users } from "lucide-react";
 import { requireSession } from "@/lib/auth";
-import { canManageEmployees, canViewPayroll, canViewSensitive, isAdmin, managerSet } from "@/lib/permissions";
+import { canManageEmployees, canViewPayroll, canViewSensitive, isAdmin, isManagerOf, managerSet } from "@/lib/permissions";
 import { getEmployeeById } from "@/server/queries/employees";
 import { getEmployeeBalances } from "@/server/services/balance";
 import { getAssetsForEmployee } from "@/server/queries/assets";
@@ -10,6 +10,7 @@ import { Avatar, Badge, Button, Card, CardHeader, Divider, EmptyState } from "@/
 import { AssetCategoryIcon, LeaveTypeIcon } from "@/components/icons";
 import { CredentialsPanel } from "./credentials-panel";
 import { AdjustBalancePanel } from "./adjust-balance";
+import { DocumentsPanel, type EmployeeDoc } from "./documents-panel";
 import {
   assetCategoryLabels,
   assetStatusLabels,
@@ -69,6 +70,10 @@ export default async function EmployeePage({ params }: { params: Promise<{ id: s
     ...(employee.manager ? [employee.manager] : []),
     ...employee.coManagers,
   ];
+
+  // Кадрові документи (офер, посадова) — лише керівництву:
+  // HR/адмін керують, керівники співробітника бачать. Сам співробітник — ні.
+  const canSeeDocuments = canManage || isManagerOf(session, managerSet(employee));
 
   const year = new Date().getUTCFullYear();
   const [balances, assets] = await Promise.all([
@@ -305,6 +310,21 @@ export default async function EmployeePage({ params }: { params: Promise<{ id: s
             ) : (
               <p className="px-5 py-4 text-sm text-ink-muted">Платіжні дані не заповнені.</p>
             )}
+          </Card>
+        ) : null}
+
+        {/* ----------------------------- Документи --------------------------- */}
+        {canSeeDocuments ? (
+          <Card>
+            <CardHeader title="Документи" action={
+              <span className="text-xs text-ink-faint">видно лише керівництву</span>
+            } />
+            <Divider />
+            <DocumentsPanel
+              employeeId={employee.id}
+              documents={employee.documents as EmployeeDoc[]}
+              canManage={canManage}
+            />
           </Card>
         ) : null}
 

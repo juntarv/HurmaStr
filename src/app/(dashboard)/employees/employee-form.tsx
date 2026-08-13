@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import Link from "next/link";
 import { TriangleAlert } from "lucide-react";
 import type { ActionResult } from "@/server/actions/employees";
@@ -30,6 +30,7 @@ export type EmployeeFormValues = {
   hireDate: Date | null;
   probationEndDate: Date | null;
   status: EmployeeStatus;
+  terminationDate: Date | null;
   employmentType: EmploymentType;
   positionId: string | null;
   departmentId: string | null;
@@ -125,6 +126,8 @@ export function EmployeeForm({
   const [state, formAction, pending] = useActionState<ActionResult | null, FormData>(action, null);
   const v = values ?? {};
   const selectedManagers = new Set(v.managerIds ?? []);
+  // При статусі «Звільнений» показуємо обов'язкову дату звільнення.
+  const [status, setStatus] = useState<EmployeeStatus>(v.status ?? "PROBATION");
 
   return (
     <form action={formAction} className="flex flex-col gap-5">
@@ -185,12 +188,37 @@ export function EmployeeForm({
             <Input id="hireDate" name="hireDate" type="date" defaultValue={dateInputValue(v.hireDate)} required />
           </Field>
           <Field label="Статус" htmlFor="status">
-            <Select id="status" name="status" defaultValue={v.status ?? "PROBATION"}>
-              {(Object.keys(employeeStatusLabels) as EmployeeStatus[]).map((key) => (
-                <option key={key} value={key}>{employeeStatusLabels[key]}</option>
-              ))}
+            <Select
+              id="status"
+              name="status"
+              defaultValue={v.status ?? "PROBATION"}
+              onChange={(e) => setStatus(e.target.value as EmployeeStatus)}
+            >
+              {(Object.keys(employeeStatusLabels) as EmployeeStatus[])
+                // Нову картку не можна створити одразу «Звільненим» —
+                // звільнення виконується редагуванням наявної картки.
+                .filter((key) => v.id || key !== "TERMINATED")
+                .map((key) => (
+                  <option key={key} value={key}>{employeeStatusLabels[key]}</option>
+                ))}
             </Select>
           </Field>
+          {status === "TERMINATED" ? (
+            <Field
+              label="Дата звільнення"
+              htmlFor="terminationDate"
+              required
+              hint="Картка переїде в розділ «Звільнені» (бачить лише адмін), доступ вимкнеться"
+            >
+              <Input
+                id="terminationDate"
+                name="terminationDate"
+                type="date"
+                defaultValue={dateInputValue(v.terminationDate)}
+                required
+              />
+            </Field>
+          ) : null}
           <Field label="Кінець випробувального" htmlFor="probationEndDate">
             <Input id="probationEndDate" name="probationEndDate" type="date" defaultValue={dateInputValue(v.probationEndDate)} />
           </Field>

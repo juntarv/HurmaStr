@@ -50,6 +50,12 @@ enum PaymentType {
   FOP
 }
 
+/// Тип кадрового документа співробітника.
+enum DocumentKind {
+  OFFER // офер
+  JOB_DESCRIPTION // посадова інструкція
+}
+
 /// Робочі дні (без субот і неділь) або календарні.
 enum LeaveUnit {
   CALENDAR_DAYS
@@ -274,6 +280,8 @@ model Employee {
 
   assets Asset[] @relation("AssetHolder")
 
+  documents EmployeeDocument[] @relation("EmployeeDocuments")
+
   note      String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -286,6 +294,33 @@ model Employee {
   @@index([lastName, firstName])
   @@index([isArchived])
   @@index([birthDate])
+}
+
+/// Кадрові документи (офер, посадова інструкція).
+/// Чутливі: бачить лише керівництво (HR/адмін + керівники співробітника),
+/// сам співробітник і сторонні — НІ. Віддаються тільки через захищений роут.
+model EmployeeDocument {
+  id String @id @default(cuid())
+
+  employeeId String
+  employee   Employee @relation("EmployeeDocuments", fields: [employeeId], references: [id], onDelete: Cascade)
+
+  kind DocumentKind
+
+  /// Оригінальна назва файлу (для показу і завантаження).
+  fileName   String
+  /// Ім'я файлу на диску (storage/documents) — генерується сервером.
+  storedName String
+  mime       String
+  size       Int
+
+  uploadedById String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  /// Один документ кожного типу на співробітника — новий замінює старий.
+  @@unique([employeeId, kind])
+  @@index([employeeId])
 }
 
 // ============================== ВІДСУТНОСТІ =================================

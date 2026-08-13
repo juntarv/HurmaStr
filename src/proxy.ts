@@ -30,6 +30,11 @@ async function hasValidCookie(token: string | undefined): Promise<boolean> {
 
 export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
+
+  // Машинний API (/api/v1/*) автентифікується Bearer-токеном у самому роуті —
+  // сесійного cookie там немає, і редірект на /login зламав би інтеграції.
+  if (pathname.startsWith("/api/v1/")) return NextResponse.next();
+
   const token = request.cookies.get(SESSION_COOKIE)?.value;
   const isAuthRoute = pathname === "/login";
 

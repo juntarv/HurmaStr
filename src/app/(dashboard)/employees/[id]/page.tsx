@@ -102,6 +102,22 @@ export default async function EmployeePage({ params }: { params: Promise<{ id: s
               {employee.position?.title ?? ui.notSpecified}
               {employee.department ? ` · ${employee.department.name}` : ""}
             </p>
+            {allManagers.length > 0 ? (
+              <p className="mt-0.5 text-sm text-ink-muted">
+                {allManagers.length > 1 ? "Керівники: " : "Керівник: "}
+                {allManagers.map((m, i) => (
+                  <span key={m.id}>
+                    {i > 0 ? ", " : ""}
+                    <Link
+                      href={`/employees/${m.id}`}
+                      className="font-medium text-ink-soft hover:text-brand"
+                    >
+                      {m.lastName} {m.firstName}
+                    </Link>
+                  </span>
+                ))}
+              </p>
+            ) : null}
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <Badge tone={employeeStatusTone[employee.status]}>
                 {employeeStatusLabels[employee.status]}

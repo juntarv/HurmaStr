@@ -33,7 +33,7 @@ export async function proxy(request: NextRequest) {
 
   // Машинний API (/api/v1/*) автентифікується Bearer-токеном у самому роуті —
   // сесійного cookie там немає, і редірект на /login зламав би інтеграції.
-  if (pathname.startsWith("/api/v1/")) return NextResponse.next();
+  if (pathname === "/api/v1" || pathname.startsWith("/api/v1/")) return NextResponse.next();
 
   const token = request.cookies.get(SESSION_COOKIE)?.value;
   const isAuthRoute = pathname === "/login";

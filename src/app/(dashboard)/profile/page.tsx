@@ -33,8 +33,16 @@ export default async function ProfilePage() {
     include: {
       position: { select: { title: true } },
       department: { select: { name: true } },
+      manager: { select: { id: true, lastName: true, firstName: true } },
+      coManagers: { select: { id: true, lastName: true, firstName: true } },
     },
   });
+
+  // Усі керівники: основний + додаткові.
+  const myManagers = [
+    ...(employee.manager ? [employee.manager] : []),
+    ...employee.coManagers.filter((m) => m.id !== employee.manager?.id),
+  ];
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -60,6 +68,19 @@ export default async function ProfilePage() {
               {roleLabels[session.role]} · у компанії {tenureUk(employee.hireDate)} (з{" "}
               {formatDateUk(employee.hireDate)})
             </p>
+            {myManagers.length > 0 ? (
+              <p className="mt-1 text-xs text-ink-muted">
+                {myManagers.length > 1 ? "Керівники: " : "Керівник: "}
+                {myManagers.map((m, i) => (
+                  <span key={m.id}>
+                    {i > 0 ? ", " : ""}
+                    <Link href={`/employees/${m.id}`} className="hover:text-brand">
+                      {m.lastName} {m.firstName}
+                    </Link>
+                  </span>
+                ))}
+              </p>
+            ) : null}
           </div>
           <Link href={`/employees/${employee.id}`}>
             <Button variant="secondary" size="sm">

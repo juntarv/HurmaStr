@@ -62,3 +62,6 @@ README (1).md
 
 # vitest scratch db
 .vitest.db
+
+# API-дока з токеном і персональними даними — не для репозиторію
+/docs/api-v1/

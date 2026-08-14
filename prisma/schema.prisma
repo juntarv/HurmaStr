@@ -296,16 +296,20 @@ model Employee {
   @@index([birthDate])
 }
 
-/// Кадрові документи (офер, посадова інструкція).
-/// Чутливі: бачить лише керівництво (HR/адмін + керівники співробітника),
-/// сам співробітник і сторонні — НІ. Віддаються тільки через захищений роут.
+/// Кадрові документи (офер, посадова інструкція, NDA, будь-які інші).
+/// Кількість не обмежена. Чутливі: бачить лише керівництво (HR/адмін +
+/// керівники співробітника), сам співробітник і сторонні — НІ.
+/// Віддаються тільки через захищений роут.
 model EmployeeDocument {
   id String @id @default(cuid())
 
   employeeId String
   employee   Employee @relation("EmployeeDocuments", fields: [employeeId], references: [id], onDelete: Cascade)
 
-  kind DocumentKind
+  /// Назва документа («Офер», «Посадова інструкція», «NDA»…).
+  title String @default("")
+  /// Легасі з першої версії (два фіксовані слоти) — для старих записів без title.
+  kind DocumentKind?
 
   /// Оригінальна назва файлу (для показу і завантаження).
   fileName   String
@@ -318,8 +322,6 @@ model EmployeeDocument {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  /// Один документ кожного типу на співробітника — новий замінює старий.
-  @@unique([employeeId, kind])
   @@index([employeeId])
 }
 

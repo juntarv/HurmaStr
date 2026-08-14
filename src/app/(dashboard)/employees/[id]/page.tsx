@@ -316,9 +316,10 @@ export default async function EmployeePage({ params }: { params: Promise<{ id: s
         {/* ----------------------------- Документи --------------------------- */}
         {canSeeDocuments ? (
           <Card>
-            <CardHeader title="Документи" action={
-              <span className="text-xs text-ink-faint">видно лише керівництву</span>
-            } />
+            <CardHeader
+              title={`Документи — ${employee.documents.length}`}
+              action={<span className="text-xs text-ink-faint">видно лише керівництву</span>}
+            />
             <Divider />
             <DocumentsPanel
               employeeId={employee.id}

@@ -9,15 +9,13 @@ import {
   isAllowedDocument,
   saveEmployeeDocument,
 } from "@/lib/uploads";
-import type { DocumentKind } from "@/generated/prisma/enums";
 
 export type DocumentResult = { ok: true; message?: string } | { ok: false; error: string };
 
-const KINDS: DocumentKind[] = ["OFFER", "JOB_DESCRIPTION"];
-
 /**
- * Завантаження оферу/посадової інструкції. Лише HR/адмін.
- * Один документ кожного типу: новий файл замінює попередній.
+ * Завантаження кадрового документа (офер, посадова, NDA — будь-який).
+ * Кількість документів не обмежена. Лише HR/адмін.
+ * Назва опційна: без неї беремо ім'я файлу без розширення.
  */
 export async function uploadEmployeeDocumentAction(
   _prev: DocumentResult | null,
@@ -27,8 +25,7 @@ export async function uploadEmployeeDocumentAction(
   if (!canManageEmployees(session)) return { ok: false, error: "Недостатньо прав" };
 
   const employeeId = String(formData.get("employeeId") ?? "");
-  const kind = String(formData.get("kind") ?? "") as DocumentKind;
-  if (!employeeId || !KINDS.includes(kind)) return { ok: false, error: "Некоректний запит" };
+  if (!employeeId) return { ok: false, error: "Некоректний запит" };
 
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) {
@@ -38,6 +35,11 @@ export async function uploadEmployeeDocumentAction(
     return { ok: false, error: "Дозволено PDF, DOC/DOCX або зображення до 10 МБ" };
   }
 
+  const title =
+    String(formData.get("title") ?? "")
+      .trim()
+      .slice(0, 120) || file.name.replace(/\.[^.]+$/, "");
+
   const employee = await prisma.employee.findUnique({
     where: { id: employeeId },
     select: { id: true },
@@ -45,24 +47,10 @@ export async function uploadEmployeeDocumentAction(
   if (!employee) return { ok: false, error: "Співробітника не знайдено" };
 
   const storedName = await saveEmployeeDocument(file);
-
-  // Замінюємо документ цього типу; старий файл прибираємо з диска.
-  const previous = await prisma.employeeDocument.findUnique({
-    where: { employeeId_kind: { employeeId, kind } },
-    select: { storedName: true },
-  });
-  await prisma.employeeDocument.upsert({
-    where: { employeeId_kind: { employeeId, kind } },
-    create: {
+  await prisma.employeeDocument.create({
+    data: {
       employeeId,
-      kind,
-      fileName: file.name,
-      storedName,
-      mime: file.type,
-      size: file.size,
-      uploadedById: session.employeeId,
-    },
-    update: {
+      title,
       fileName: file.name,
       storedName,
       mime: file.type,
@@ -70,7 +58,6 @@ export async function uploadEmployeeDocumentAction(
       uploadedById: session.employeeId,
     },
   });
-  if (previous) await deleteEmployeeDocument(previous.storedName);
 
   revalidatePath(`/employees/${employeeId}`);
   return { ok: true, message: "Документ завантажено" };

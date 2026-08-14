@@ -110,8 +110,8 @@ export async function getEmployeeById(id: string) {
       headedDepartments: { select: { id: true, name: true } },
       // Кадрові документи — сторінка сама вирішує, кому їх показувати.
       documents: {
-        select: { id: true, kind: true, fileName: true, size: true, updatedAt: true },
-        orderBy: { kind: "asc" },
+        select: { id: true, title: true, kind: true, fileName: true, size: true, updatedAt: true },
+        orderBy: { createdAt: "asc" },
       },
     },
   });
